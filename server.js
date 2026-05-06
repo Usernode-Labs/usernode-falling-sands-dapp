@@ -125,6 +125,56 @@ nodeStatusProbe.start();
 // Express as the request handler.
 const server = http.createServer(app);
 
+// Drops every fetched tx older than the most recent admin-authored
+// `{app:"falling-sands", type:"reset"}` memo. The replay loop in
+// engine.js calls reseedUniverse() on every reset, which wipes the
+// canvas back to seed content — so any pre-reset draws applied during
+// replay are immediately discarded. Trimming them here saves the
+// (potentially large) physics-window simulation cost on cold boots.
+//
+// Returns the input array unchanged when ADMIN_PUBKEY is unset (resets
+// can't be authenticated) or when no admin reset is found in history.
+//
+// Invariant: this is purely a replay-cost optimization. Engine.js still
+// applies its own `txTick <= tickCount` filter, so a snapshot newer than
+// the latest reset transparently drops the reset (reseed would be a
+// no-op anyway). And `reseedUniverse()` deliberately leaves the WASM
+// PRNG alone, so trimmed vs. untrimmed cold boots reach different
+// post-reset PRNG states — but each deploy is its own simulation
+// (canonical dapps.usernodelabs.org and this SV deploy already diverge
+// the moment they boot at different wall-clock times), so a single
+// consistent trim policy per deploy preserves internal determinism.
+function trimToLatestAdminReset(txs, adminPubkey) {
+  if (!adminPubkey || !Array.isArray(txs) || txs.length === 0) return txs || [];
+
+  function timestampOf(tx) {
+    return tx.timestamp_ms || (tx.created_at ? Date.parse(tx.created_at) : 0);
+  }
+
+  let latestResetTs = 0;
+  for (const tx of txs) {
+    if (!tx || !tx.memo) continue;
+    const sender = tx.source || tx.from_pubkey;
+    if (sender !== adminPubkey) continue;
+    let memo;
+    try { memo = typeof tx.memo === "string" ? JSON.parse(tx.memo) : tx.memo; }
+    catch (_) { continue; }
+    if (!memo || memo.app !== "falling-sands" || memo.type !== "reset") continue;
+    const ts = timestampOf(tx);
+    if (ts > latestResetTs) latestResetTs = ts;
+  }
+
+  if (!latestResetTs) {
+    console.log(`[replay] no admin reset found in ${txs.length} backfilled tx(s) — replaying full history`);
+    return txs;
+  }
+
+  const trimmed = txs.filter(tx => timestampOf(tx) >= latestResetTs);
+  const skipped = txs.length - trimmed.length;
+  console.log(`[replay] trimming to latest admin reset at ${new Date(latestResetTs).toISOString()}: skipping ${skipped} pre-reset tx(s), keeping ${trimmed.length}`);
+  return trimmed;
+}
+
 // ── Async init: chain backfill → engine → cache → snapshot watcher ─────────
 //
 // Falling-sands is the one dapp that does its own backfill outside the
@@ -149,7 +199,10 @@ const server = http.createServer(app);
       appPubkey: APP_PUBKEY,
       queryField: "recipient",
     });
-    replayTxs = fetched.transactions;
+    replayTxs = trimToLatestAdminReset(fetched.transactions, ADMIN_PUBKEY);
+    // lastHeight + replayIds intentionally come from the FULL fetched set,
+    // not the trimmed one — the live poller resumes from the real chain
+    // tip and dedups by id, so it must see every backfilled tx id.
     lastHeight = fetched.lastHeight;
     replayIds = fetched.txIds || [];
   }

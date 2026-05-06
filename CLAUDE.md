@@ -177,6 +177,17 @@ locally, run `git submodule update --init --recursive` after cloning.
 - `/__sands/state`, `/__sands/snapshot`, `/__sands/transactions` are
   intentionally public. They expose global state identical for every
   viewer.
+- **Replay-trim optimization**: `server.js`'s `trimToLatestAdminReset`
+  drops every fetched tx older than the most recent admin-authored
+  reset memo before passing the list to `createEngine({replayTxs})`.
+  Each reset wipes the canvas via `reseedUniverse()`, so any pre-reset
+  draws applied during replay are immediately discarded — trimming
+  saves the (potentially large) windowed-physics simulation cost on
+  cold boots when the chain has accumulated a long pre-reset history.
+  Safe because (a) `reseedUniverse()` is idempotent and (b) the engine
+  still applies its own `txTick <= tickCount` filter, so a snapshot
+  newer than the latest reset transparently drops the (now-redundant)
+  reset event. Only kicks in when `ADMIN_PUBKEY` is set.
 
 ## Parallel deploys + same APP_PUBKEY
 
