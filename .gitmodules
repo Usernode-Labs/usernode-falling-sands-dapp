@@ -1,0 +1,3 @@
+[submodule "sandspiel"]
+	path = sandspiel
+	url = https://github.com/Usernode-Labs/sandspiel.git

@@ -1,0 +1,9 @@
+node_modules/
+.env
+.git/
+data/
+snapshot.json
+*.log
+.DS_Store
+sandspiel/crate/target/
+sandspiel/crate/pkg/

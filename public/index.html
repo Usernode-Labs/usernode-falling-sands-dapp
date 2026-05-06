@@ -1,0 +1,2650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Falling Sands — Shared Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0b0e14;
+      color: #cdd6e4;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ── Top bar ─────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      width: 100%;
+      flex-shrink: 0;
+    }
+
+    #current-el {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #current-swatch {
+      width: 44px; height: 44px;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(255,255,255,0.25);
+      transition: transform 0.12s;
+    }
+    #current-el:active #current-swatch { transform: scale(0.92); }
+    #current-name {
+      font-size: 10px;
+      color: #8896ab;
+      text-align: center;
+      max-width: 52px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tb-sep { width: 1px; height: 36px; background: rgba(255,255,255,0.12); flex-shrink: 0; }
+
+    .quick-bar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .quick-btn {
+      width: 36px; height: 36px;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      flex-shrink: 0;
+    }
+    .quick-btn:hover { transform: scale(1.08); }
+    .quick-btn:active { transform: scale(0.94); }
+    .quick-btn.eraser {
+      background: #1e2736;
+      font-size: 18px;
+      color: #aaa;
+    }
+    .quick-btn.recent { flex-shrink: 0; }
+
+    #brush-label { font-size: 11px; color: #8896ab; }
+    #brush-size { width: 80px; accent-color: #6ea8fe; }
+
+    /* The right slot is always reserved so the layout doesn't snap when
+       the user starts/finishes a drawing session. Width fits a compact
+       budget meter (24px) + ✕ (34px) + ✓ (34px) + two 6px gaps = 104px.
+       Children inside hide/show based on state via JS.
+       Both `flex` and `width` set defensively so neither flex sizing
+       nor any browser-specific basis fallback can collapse the slot. */
+    .tb-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      flex: 0 0 104px;
+      width: 104px;
+      min-width: 104px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .fab {
+      width: 34px; height: 34px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      font-size: 17px;
+      line-height: 34px;
+      text-align: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s;
+      flex-shrink: 0;
+    }
+    .fab:active { transform: scale(0.94); }
+    #btn-send { background: #5dd39e; color: #0b0e14; }
+    #btn-discard { background: #2a3548; color: #aaa; }
+    .tx-progress-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      min-width: 0;
+      width: 100%;
+      max-width: 200px;
+    }
+    .tx-progress-bar .tx-track {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.12);
+      overflow: hidden;
+    }
+    .tx-progress-bar .tx-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 3px;
+      background: #5dd39e;
+      transition: width 0.4s ease-out, background-color 0.4s ease;
+    }
+    .tx-progress-bar .tx-fill.ok   { background: #6ef0a8; }
+    .tx-progress-bar .tx-fill.warn { background: #e6a817; }
+    .tx-progress-bar .tx-fill.err  { background: #ff6b6b; }
+    .tx-progress-bar .tx-label {
+      font-size: 10px;
+      color: #8896ab;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .tx-progress-bar .tx-label.warn { color: #e6a817; }
+    .tx-progress-bar .tx-label.err  { color: #ff6b6b; }
+    .hide { display: none !important; }
+    #budget-meter {
+      width: 24px;
+      height: 10px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 5px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
+    #budget-fill {
+      height: 100%;
+      width: 100%;
+      background: #5dd39e;
+      border-radius: 5px;
+      transition: width 0.08s, background-color 0.2s;
+    }
+
+    /* ── Full element picker overlay ─────────────── */
+    #picker-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    #picker-overlay.open { display: flex; }
+    #picker-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding: 24px;
+      max-width: 340px;
+      width: 90%;
+      max-height: 80vh;
+      max-height: 80dvh;
+      overflow-y: auto;
+      background: #131820;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .picker-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      padding: 8px 4px;
+      border-radius: 10px;
+      transition: background 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .picker-item:hover { background: rgba(255,255,255,0.06); }
+    .picker-item:active { background: rgba(255,255,255,0.12); }
+    .picker-swatch {
+      width: 40px; height: 40px;
+      border-radius: 8px;
+      border: 2px solid rgba(255,255,255,0.15);
+    }
+    .picker-item.active .picker-swatch {
+      border-color: #fff;
+      box-shadow: 0 0 8px rgba(255,255,255,0.3);
+    }
+    .picker-label {
+      font-size: 11px;
+      color: #8896ab;
+      text-align: center;
+    }
+
+    /* ── Canvas ───────────────────────────────────── */
+    #canvas-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      min-height: 0;
+      width: 100%;
+    }
+    #canvas-container { position: relative; }
+    #sand-canvas {
+      image-rendering: pixelated;
+      border-radius: 8px;
+      display: block;
+      pointer-events: none;
+    }
+    #overlay-canvas {
+      position: absolute;
+      inset: 0;
+      border-radius: 8px;
+      cursor: crosshair;
+      pointer-events: auto;
+    }
+
+    /* ── Status bar ───────────────────────────────── */
+    #status-bar {
+      padding: 4px 16px;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #5a6a80;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      display: flex;
+      gap: 16px;
+    }
+    #status-bar .ok { color: #5dd39e; }
+    #status-bar .err { color: #ff6b6b; }
+    #debug-hash { color: #e6a817; display: none; }
+    #debug-hash.visible { display: inline; }
+
+    /* WS connection indicator (next to fps) */
+    #ws-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #5a6a80;
+      cursor: help;
+      user-select: none;
+    }
+    #ws-indicator .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #5a6a80;
+      box-shadow: 0 0 0 0 rgba(0,0,0,0);
+      transition: background 0.2s ease, box-shadow 0.4s ease;
+    }
+    #ws-indicator.live .dot {
+      background: #5dd39e;
+      box-shadow: 0 0 6px rgba(93,211,158,0.55);
+    }
+    #ws-indicator.quiet .dot {
+      background: #e6a817;
+      box-shadow: 0 0 6px rgba(230,168,23,0.55);
+    }
+    #ws-indicator.connecting .dot {
+      background: #6ea8fe;
+      animation: ws-pulse 1.1s ease-in-out infinite;
+    }
+    #ws-indicator.offline .dot {
+      background: #ff6b6b;
+      box-shadow: 0 0 6px rgba(255,107,107,0.55);
+    }
+    @keyframes ws-pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.35; }
+    }
+
+    #info-btn {
+      font-size: 16px;
+      font-weight: 700;
+      color: #8896ab;
+      background: #1e2736;
+      border-radius: 50%;
+    }
+
+    #info-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    #info-overlay.open { display: flex; }
+    #info-content {
+      padding: 24px;
+      max-width: 380px;
+      width: 90%;
+      max-height: 80vh;
+      max-height: 80dvh;
+      overflow-y: auto;
+      background: #131820;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+      font-size: 13px;
+      line-height: 1.6;
+      color: #cdd6e4;
+    }
+    #info-content h2 { margin: 0 0 10px; font-size: 17px; }
+    #info-content p { margin: 0 0 8px; }
+    #info-content ul { margin: 0 0 8px; padding-left: 18px; }
+    #info-content li { margin-bottom: 4px; }
+    #info-content .muted { color: #5a6a80; }
+
+    /* Admin-only section inside the info overlay. Hidden by default; we
+       un-hide it from JS when the current user's address matches the
+       server-reported adminPubkey. Visually separated from the user-facing
+       copy above with a divider + amber accent so it's unambiguously a
+       destructive operator control, not something a normal user should
+       see and tap by accident. */
+    #admin-section {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    #admin-section h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      color: #e6a817;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    #admin-reset-btn {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255,107,107,0.4);
+      border-radius: 8px;
+      background: rgba(255,107,107,0.12);
+      color: #ff8b8b;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, transform 0.1s;
+    }
+    #admin-reset-btn:hover { background: rgba(255,107,107,0.22); }
+    #admin-reset-btn:active { transform: scale(0.98); }
+    #admin-reset-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    #admin-reset-status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #8896ab;
+      min-height: 14px;
+    }
+    #admin-reset-status.err { color: #ff6b6b; }
+    #admin-reset-status.ok { color: #5dd39e; }
+
+    /* ── Admin reset confirm modal ──────────────────────
+     * Hand-rolled because window.confirm() is silently a
+     * no-op in some Flutter WebView WKUIDelegate setups,
+     * which made the production reset button look dead. */
+    #admin-confirm-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 600;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    #admin-confirm-overlay.open { display: flex; }
+    #admin-confirm-content {
+      padding: 22px;
+      max-width: 360px;
+      width: 90%;
+      background: #131820;
+      border-radius: 16px;
+      border: 1px solid rgba(255,107,107,0.3);
+      font-size: 13px;
+      line-height: 1.6;
+      color: #cdd6e4;
+    }
+    #admin-confirm-content h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: #ff8b8b;
+    }
+    #admin-confirm-content p { margin: 0 0 14px; }
+    #admin-confirm-actions {
+      display: flex;
+      gap: 8px;
+    }
+    #admin-confirm-actions button {
+      flex: 1 1 auto;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, transform 0.1s;
+    }
+    #admin-confirm-actions button:active { transform: scale(0.98); }
+    #admin-confirm-cancel {
+      border: 1px solid rgba(255,255,255,0.15);
+      background: transparent;
+      color: #cdd6e4;
+    }
+    #admin-confirm-cancel:hover { background: rgba(255,255,255,0.06); }
+    #admin-confirm-ok {
+      border: 1px solid rgba(255,107,107,0.4);
+      background: rgba(255,107,107,0.18);
+      color: #ff8b8b;
+    }
+    #admin-confirm-ok:hover { background: rgba(255,107,107,0.32); }
+
+    /* ── Loading overlay ──────────────────────────── */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: #0b0e14;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      transition: opacity 0.4s ease;
+    }
+    #loading-overlay.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #loading-overlay .loader-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #e7edf7;
+      letter-spacing: 0.5px;
+    }
+    #loading-overlay .loader-status {
+      font-size: 13px;
+      color: #8896ab;
+    }
+    #loading-overlay .loader-track {
+      width: 200px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.1);
+      overflow: hidden;
+    }
+    #loading-overlay .loader-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 2px;
+      background: #5dd39e;
+      transition: width 0.3s ease-out;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="loader-title">Falling Sands</div>
+  <div class="loader-track"><div class="loader-fill" id="loader-fill"></div></div>
+  <div class="loader-status" id="loader-status">Loading...</div>
+</div>
+
+<div id="status-bar">
+  <span id="status">Loading WASM...</span>
+  <span id="fps-display"></span>
+  <span id="ws-indicator" class="connecting" title="Connecting...">
+    <span class="dot"></span>
+    <span class="label">connecting</span>
+  </span>
+  <span id="debug-hash"></span>
+</div>
+
+<div id="toolbar">
+  <div id="current-el">
+    <div id="current-swatch"></div>
+    <div id="current-name"></div>
+  </div>
+  <div class="tb-sep"></div>
+  <div class="quick-bar" id="quick-bar"></div>
+  <label id="brush-label">Brush</label>
+  <input id="brush-size" type="range" min="1" max="15" value="4" />
+  <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
+  <!-- The .tb-right slot is always rendered so the toolbar layout
+       doesn't snap when the user starts/finishes drawing, but its
+       children start hidden — refreshFabs() reveals them only while
+       there are pending strokes (or shows the progress bar during
+       send/apply). The slot is just empty space until then. -->
+  <div class="tb-right" id="fab-bar">
+    <div id="budget-meter" style="display:none">
+      <div id="budget-fill"></div>
+    </div>
+    <button class="fab" id="btn-discard" title="Discard" style="display:none">&#x2715;</button>
+    <button class="fab" id="btn-send" title="Send" style="display:none">&#x2713;</button>
+    <div class="tx-progress-bar hide" id="send-progress">
+      <div class="tx-track"><div class="tx-fill"></div></div>
+      <div class="tx-label">Sending...</div>
+    </div>
+  </div>
+</div>
+
+<div id="picker-overlay">
+  <div id="picker-grid"></div>
+</div>
+
+<div id="info-overlay">
+  <div id="info-content">
+    <h2>Falling Sands</h2>
+    <p>A collaborative pixel sandbox on the Usernode blockchain. Draw with physics-simulated elements and watch them interact in real time.</p>
+    <ul>
+      <li><strong>Pick an element</strong> from the toolbar (tap the swatch to see all elements)</li>
+      <li><strong>Draw</strong> on the canvas &mdash; strokes appear locally as a preview</li>
+      <li><strong>Send</strong> your strokes (tap the check mark) to commit them on-chain as a transaction</li>
+      <li>Everyone runs the same deterministic simulation locally</li>
+    </ul>
+    <p>Each stroke is stored as a transaction memo on the Usernode blockchain. Your device runs the physics engine (WASM) locally.</p>
+    <p class="muted">Tap anywhere outside this panel to close.</p>
+    <div id="admin-section" class="hide">
+      <h3>Admin</h3>
+      <p class="muted">You're signed in as the canvas admin. Resetting wipes everyone's drawings back to the seeded default. This is recorded on-chain as an admin reset memo.</p>
+      <button id="admin-reset-btn" type="button">Reset shared canvas</button>
+      <div id="admin-reset-status"></div>
+    </div>
+  </div>
+</div>
+
+<div id="admin-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
+  <div id="admin-confirm-content">
+    <h2 id="admin-confirm-title">Reset shared canvas?</h2>
+    <p>This wipes everyone's drawings back to the seeded default and is recorded on-chain.</p>
+    <div id="admin-confirm-actions">
+      <button id="admin-confirm-cancel" type="button">Cancel</button>
+      <button id="admin-confirm-ok" type="button">Reset</button>
+    </div>
+  </div>
+</div>
+
+<div id="canvas-wrap">
+  <div id="canvas-container">
+    <canvas id="sand-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
+</div>
+
+<script src="/usernode-bridge.js"></script>
+<script src="/usernode-usernames.js"></script>
+<script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<script src="/wasm-browser.js"></script>
+
+<script>
+// =============================================================================
+// ERROR DISPLAY
+// =============================================================================
+window.onerror = function(msg, src, line) {
+  var el = document.getElementById("status");
+  el.className = "err";
+  el.textContent = "JS Error (line " + line + "): " + msg;
+  if (typeof errorStickyUntil !== "undefined") {
+    errorStickyUntil = performance.now() + ERROR_HOLD_MS;
+  }
+};
+
+// =============================================================================
+// LOADING OVERLAY
+// =============================================================================
+
+const _loaderOverlay = document.getElementById("loading-overlay");
+const _loaderFill = document.getElementById("loader-fill");
+const _loaderStatus = document.getElementById("loader-status");
+
+function setLoading(pct, msg) {
+  if (_loaderFill) _loaderFill.style.width = pct + "%";
+  if (_loaderStatus) _loaderStatus.textContent = msg;
+}
+
+// Two-gate dismissal: the loader stays up until BOTH the engine is
+// ready (WS init received, snapshot loaded, sim caught up) AND the
+// chain is ready (node `Synced`, `sands` SSE stream up). The chain
+// poll runs in parallel with engine init below — whichever finishes
+// first is held by `tryDismissLoader()` until the other catches up.
+//
+// Without the chain gate, falling-sands silently degrades to
+// single-player mode during a node/SSE outage: the user can draw
+// locally but other players' strokes never appear, with no signal
+// in the UI as to why. With the gate, the existing loader UI stays
+// up and surfaces the actual state ("Node syncing…", "Connecting to
+// live updates…") until the chain is actually feeding the engine.
+const _SANDS_STREAM_KEY = "sands";
+let _engineLoaderReady = false;
+let _chainLoaderReady = false;
+let _loaderDismissed = false;
+
+function tryDismissLoader() {
+  if (_loaderDismissed) return;
+  if (!_engineLoaderReady || !_chainLoaderReady) return;
+  _loaderDismissed = true;
+  setLoading(100, "Ready!");
+  if (_loaderOverlay) {
+    _loaderOverlay.classList.add("fade-out");
+    setTimeout(() => { _loaderOverlay.style.display = "none"; }, 500);
+  }
+}
+
+function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Mirrors usernode-loading.js's shouldDismiss() so the two gating
+// strategies (overlay-style for other dapps, in-place for sands) make
+// the same trust-after-first-sync decision.
+async function pollChainReady() {
+  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+    ? await window.usernode.isMockEnabled()
+    : false;
+  if (mockEnabled) {
+    _chainLoaderReady = true;
+    tryDismissLoader();
+    return;
+  }
+
+  while (!_chainLoaderReady) {
+    let snap = null;
+    try {
+      const resp = await fetch("/__usernode/node_status", { cache: "no-store" });
+      if (resp.status === 404) {
+        // Probe endpoint not wired (older server / different deployment).
+        // Fail open rather than hanging the loader forever.
+        _chainLoaderReady = true;
+        tryDismissLoader();
+        return;
+      }
+      if (!resp.ok) { await _sleep(1000); continue; }
+      snap = await resp.json();
+    } catch (_) {
+      await _sleep(1000);
+      continue;
+    }
+
+    if (snap.status === "mock" || snap.status === "unknown") {
+      _chainLoaderReady = true;
+      tryDismissLoader();
+      return;
+    }
+
+    // Stream-readiness gate. If the server hasn't registered our key
+    // (older deploy, missing wiring), fail open — same behavior as
+    // usernode-loading.js — so a misconfiguration doesn't strand the
+    // user behind a permanent overlay.
+    const hasStreamMap = !!snap.streams;
+    const streamRegistered = hasStreamMap
+      && Object.prototype.hasOwnProperty.call(snap.streams, _SANDS_STREAM_KEY);
+    const streamOk = !hasStreamMap || !streamRegistered
+      || snap.streams[_SANDS_STREAM_KEY] === true;
+
+    // Fresh-boot explorer gate: cache backfill goes through the
+    // explorer, so on a never-yet-ok explorer hold the loader until it
+    // recovers. Fail open if the probe doesn't surface explorer state
+    // (older server) — same fail-open posture as the stream gate.
+    //
+    // "degraded" = ≥1 configured host up; the proxy and chain pollers
+    // automatically fall over to a healthy one, so we proceed.
+    const explorer = snap.explorer || null;
+    const explorerStatus = explorer ? explorer.status : null;
+    const explorerDown = explorer
+      && (explorerStatus === "unreachable" || explorerStatus === "bad_response");
+    const explorerOk = !explorer
+      || explorerStatus === "ok"
+      || explorerStatus === "degraded"
+      || explorerStatus === "mock"
+      || explorerStatus === "unknown"
+      || snap.explorerHasBeenOk === true;
+
+    if (streamOk && explorerOk) {
+      if (snap.status === "Synced") {
+        _chainLoaderReady = true;
+        tryDismissLoader();
+        return;
+      }
+      // Trust-after-first-sync: subsequent Connected/Syncing means the
+      // node is just applying new tip blocks; safe to dismiss.
+      if (snap.hasBeenSynced && (snap.status === "Connected" || snap.status === "Syncing")) {
+        _chainLoaderReady = true;
+        tryDismissLoader();
+        return;
+      }
+    }
+
+    // Only override the loader text once the engine side is done — until
+    // then, the WS init handler is the one driving the bar (Loading
+    // engine → Connecting to server → Server loading → Loading snapshot
+    // → Catching up).
+    if (_engineLoaderReady) {
+      if (explorerDown && !snap.explorerHasBeenOk) {
+        // Highest precedence: every configured host is down on a fresh
+        // boot, which blocks cache backfill — the actual problem worth
+        // naming. List the hosts so operators can see which fallback
+        // chain failed.
+        let hostList = "";
+        if (explorer && Array.isArray(explorer.hosts) && explorer.hosts.length) {
+          hostList = explorer.hosts.map((h) => h && h.host).filter(Boolean).join(", ");
+        } else if (explorer && explorer.host) {
+          hostList = String(explorer.host);
+        }
+        setLoading(80, hostList
+          ? "Explorer unreachable\u2026 (" + hostList + ")"
+          : "Explorer unreachable\u2026");
+      } else if (!streamOk) {
+        setLoading(95, "Connecting to live updates\u2026");
+      } else if (snap.status === "Connecting") {
+        setLoading(80, "Node connecting to network\u2026");
+      } else if (snap.status === "Connected") {
+        setLoading(85, "Node joining network\u2026");
+      } else if (snap.status === "Syncing") {
+        const our = snap.bestTipHeight;
+        const peer = snap.peerBestTipHeight;
+        if (typeof our === "number" && typeof peer === "number" && peer > 0) {
+          const pct = Math.max(85, Math.min(99, 85 + (our / peer) * 14));
+          setLoading(Math.round(pct), "Node syncing chain\u2026 block " + our + " / " + peer);
+        } else {
+          setLoading(85, "Node syncing chain\u2026");
+        }
+      } else if (snap.status === "unreachable") {
+        setLoading(80, "Waiting for node\u2026");
+      } else {
+        setLoading(80, "Waiting for node\u2026");
+      }
+    }
+
+    await _sleep(500);
+  }
+}
+
+// Kick off the chain-readiness gate immediately — no need to wait for
+// WASM/WS. By the time the engine finishes replay, the chain poll has
+// usually already hit `Synced` and the loader dismisses promptly.
+pollChainReady();
+
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+let WIDTH = 300;
+let HEIGHT = 450;
+const CELL_BYTES = 4;
+const TICK_HZ = 30;
+const TICK_INTERVAL_MS = 1000 / TICK_HZ;
+const RENDER_DELAY_MS = 5000;
+const CHECKPOINT_INTERVAL_TICKS = TICK_HZ * 5; // every 5 seconds
+const MAX_CHECKPOINTS = 24;
+const WINDOW_TICKS = 10 * 60 * TICK_HZ; // 10 min physics window (matches server)
+
+// Default epoch — overridden by server's init message with chain genesis time.
+let TICK_EPOCH = 1767225600000;
+
+function timestampToTick(ms) { return Math.floor((ms - TICK_EPOCH) / TICK_INTERVAL_MS); }
+
+const APP_PUBKEY = "ut1r96pdaa7h2k4vf62w3w598fyrelv9wru4t53qtgswgfzpsvz77msj588uu";
+const TX_SEND_OPTS = { timeoutMs: 180000, pollIntervalMs: 1500 };
+
+// Route the bridge's inclusion polling at the dapp-server's per-app cache
+// so every connected client shares the same chain poll on the server side
+// instead of each one re-polling the explorer. Also surfaces this dapp's
+// in-flight client sends on /status. See AGENTS.md §7.
+window.usernode = window.usernode || {};
+window.usernode.serverCacheUrl = "/__usernode/cache/" + APP_PUBKEY;
+
+// Populated from the server's WS init/resync message. null when
+// SANDS_ADMIN_PUBKEY isn't configured server-side; non-null means reset
+// memos from that address are honored and the client shows the admin UI
+// only to that user. Kept as a module-scope let so maybeShowAdminUI can
+// re-evaluate after both the bridge and the WS init arrive (whichever
+// order they land in).
+let adminPubkey = null;
+
+const EXPLORER_BASE = window.location.origin + "/explorer-api";
+(async function setupExplorer() {
+  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+    ? await window.usernode.isMockEnabled()
+    : false;
+  if (mockEnabled) return;
+  try {
+    const resp = await fetch(`${EXPLORER_BASE}/active_chain`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.chain_id) {
+      window.usernode = window.usernode || {};
+      window.usernode.transactionsBaseUrl = `${EXPLORER_BASE}/${data.chain_id}`;
+    }
+  } catch (e) { console.warn("Could not discover chain ID:", e); }
+})();
+
+// =============================================================================
+// SPECIES PALETTE
+// =============================================================================
+
+const SPECIES = [
+  { id: 0,  name: "Erase", color: "#1e2736" },
+  { id: 2,  name: "Sand",  color: "#c2b280" },
+  { id: 3,  name: "Water", color: "#4a90d9" },
+  { id: 13, name: "Stone", color: "#808080" },
+  { id: 7,  name: "Wood",  color: "#8b6914" },
+  { id: 11, name: "Plant", color: "#4caf50" },
+  { id: 19, name: "Seed",  color: "#e91e63" },
+  { id: 18, name: "Fungus",color: "#ff8c42" },
+  { id: 6,  name: "Fire",  color: "#ff6b35" },
+  { id: 8,  name: "Lava",  color: "#ff4500" },
+  { id: 9,  name: "Ice",   color: "#a6dcef" },
+  { id: 4,  name: "Gas",   color: "#d4d4d4" },
+  { id: 12, name: "Acid",  color: "#b8ff00" },
+  { id: 16, name: "Oil",   color: "#3a3a3a" },
+  { id: 14, name: "Dust",  color: "#ff69b4" },
+  { id: 5,  name: "Clone", color: "#9c27b0" },
+  { id: 17, name: "Rocket",color: "#ff1744" },
+  { id: 15, name: "Mite",  color: "#ce93d8" },
+  { id: 1,  name: "Wall",  color: "#555555" },
+  { id: 20, name: "Spout", color: "#2266aa", source: true },
+  { id: 21, name: "Sand Src", color: "#8a7a50", source: true },
+  { id: 22, name: "Torch", color: "#cc4400", source: true },
+  { id: 23, name: "Oil Well", color: "#1a1a2a", source: true },
+];
+let sourcesEnabled = false;
+
+let selectedSpecies = 2;
+let brushSize = 4;
+
+// =============================================================================
+// ELEMENT SELECTOR
+// =============================================================================
+
+let recentIds = [1, 3, 6];
+const MAX_RECENT = 3;
+// How many recent-species swatches the quick bar is currently allowed to show.
+// fitToolbar() shrinks this whenever the toolbar would overflow the viewport
+// (narrow phones, especially when the send/discard fab-bar is visible) and
+// restores up to MAX_RECENT once there is room again.
+let recentLimit = MAX_RECENT;
+const speciesById = {};
+SPECIES.forEach(sp => { speciesById[sp.id] = sp; });
+
+const currentSwatchEl = document.getElementById("current-swatch");
+const currentNameEl   = document.getElementById("current-name");
+const currentElBtn    = document.getElementById("current-el");
+const toolbarEl       = document.getElementById("toolbar");
+const quickBar        = document.getElementById("quick-bar");
+const pickerOverlay   = document.getElementById("picker-overlay");
+const pickerGrid      = document.getElementById("picker-grid");
+const brushSlider     = document.getElementById("brush-size");
+
+function refreshCurrent() {
+  const sp = speciesById[selectedSpecies] || SPECIES[1];
+  currentSwatchEl.style.background = sp.color;
+  currentNameEl.textContent = sp.name;
+}
+
+function refreshQuickBar() {
+  quickBar.innerHTML = "";
+  const visibleRecents = recentIds.slice(0, recentLimit);
+  visibleRecents.forEach(id => {
+    const sp = speciesById[id];
+    if (!sp) return;
+    const btn = document.createElement("div");
+    btn.className = "quick-btn recent";
+    btn.style.background = sp.color;
+    btn.title = sp.name;
+    btn.addEventListener("click", () => selectSpecies(id));
+    quickBar.appendChild(btn);
+  });
+  const eraser = document.createElement("div");
+  eraser.className = "quick-btn eraser";
+  eraser.title = "Erase";
+  eraser.textContent = "\uD83E\uDDF9";
+  eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); });
+  quickBar.appendChild(eraser);
+}
+
+// Adaptive toolbar fit. The fab-bar (.tb-right) reserves a fixed 104px
+// slot via `flex: 0 0 104px` so the layout doesn't snap when the user
+// starts/finishes a drawing session — ✕/✓ + budget meter always have
+// space, and recents/brush stay sized for the worst case from the start.
+//
+// What can still overflow: when the viewport is narrow enough that
+// even (current swatch + sep + eraser + brush slider + info + 104px
+// fab-bar) doesn't fit, we need to drop pieces off the left/middle.
+//
+// Strategy: count recent swatches down from MAX_RECENT until the
+// toolbar fits. As a last resort (zero recents and still clipping)
+// hide the "Brush" text label — the slider stays usable.
+let _fitInProgress = false;
+function fitToolbar() {
+  if (!toolbarEl || _fitInProgress) return;
+  _fitInProgress = true;
+  try {
+    const fabBarEl = document.getElementById("fab-bar");
+    const brushLabelEl = document.getElementById("brush-label");
+
+    // Reset to the most-permissive state and re-measure from there so the
+    // recents/brush-label come back as soon as space is available again.
+    let limit = MAX_RECENT;
+    recentLimit = limit;
+    refreshQuickBar();
+    if (brushLabelEl) brushLabelEl.style.display = "";
+
+    // Overflow detection by bounding-rect comparison. We can't rely on
+    // toolbarEl.scrollWidth here: body{overflow:hidden} + #toolbar's
+    // default overflow:visible means flex children can extend past
+    // #toolbar visually, but scrollWidth is reported equal to
+    // clientWidth (because the overflow isn't "scrollable" from
+    // #toolbar's perspective). We instead check whether the fab-bar
+    // (the rightmost flex item, with `flex: 0 0 104px`) has been pushed
+    // past the toolbar's right edge — that's the actual failure mode
+    // when the left-side items don't fit alongside the reserved slot.
+    // +1 px tolerance for sub-pixel rounding.
+    function overflowing() {
+      if (!fabBarEl) return false;
+      const fabRight = fabBarEl.getBoundingClientRect().right;
+      const tbRight = toolbarEl.getBoundingClientRect().right;
+      if (fabRight > tbRight + 1) return true;
+      // Also catch internal fab-bar clipping just in case (long label
+      // in the progress bar etc.).
+      if (fabBarEl.scrollWidth > fabBarEl.clientWidth + 1) return true;
+      return false;
+    }
+
+    while (limit > 0 && overflowing()) {
+      limit--;
+      recentLimit = limit;
+      refreshQuickBar();
+    }
+
+    if (brushLabelEl) {
+      brushLabelEl.style.display = overflowing() ? "none" : "";
+    }
+
+    // Layout diagnostic — prints once per fit pass.
+    try {
+      const vw = window.innerWidth;
+      const tbRect = toolbarEl.getBoundingClientRect();
+      const fabRect = fabBarEl ? fabBarEl.getBoundingClientRect() : null;
+      console.log("[toolbar-fit]", {
+        viewport: vw,
+        recentLimit,
+        brushLabelHidden: brushLabelEl ? brushLabelEl.style.display === "none" : null,
+        toolbarRight: Math.round(tbRect.right),
+        fabBarLeft: fabRect ? Math.round(fabRect.left) : null,
+        fabBarRight: fabRect ? Math.round(fabRect.right) : null,
+        fabBarWidth: fabRect ? Math.round(fabRect.width) : null,
+        fabPastToolbar: fabRect ? Math.round(fabRect.right - tbRect.right) : null,
+        fabPastViewport: fabRect ? Math.round(fabRect.right - vw) : null,
+      });
+    } catch (_) { /* diagnostic only */ }
+  } finally {
+    _fitInProgress = false;
+  }
+}
+
+function selectSpecies(id) {
+  if (id === 0) { selectedSpecies = 0; refreshCurrent(); return; }
+  const prev = selectedSpecies;
+  selectedSpecies = id;
+  if (prev !== 0 && prev !== id) {
+    recentIds = recentIds.filter(r => r !== id && r !== prev);
+    recentIds.unshift(prev);
+    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
+  } else {
+    recentIds = recentIds.filter(r => r !== id);
+    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
+  }
+  refreshCurrent();
+  refreshQuickBar();
+}
+
+function rebuildPicker() {
+  pickerGrid.innerHTML = "";
+  SPECIES.forEach(sp => {
+    if (sp.id === 0) return;
+    if (sp.source && !sourcesEnabled) return;
+    const item = document.createElement("div");
+    item.className = "picker-item";
+    item.innerHTML =
+      `<div class="picker-swatch" style="background:${sp.color}"></div>` +
+      `<div class="picker-label">${sp.name}</div>`;
+    item.addEventListener("click", () => { selectSpecies(sp.id); closePicker(); });
+    pickerGrid.appendChild(item);
+  });
+}
+rebuildPicker();
+
+function openPicker() {
+  const items = pickerGrid.querySelectorAll(".picker-item");
+  const visible = SPECIES.filter(s => s.id !== 0 && (!s.source || sourcesEnabled));
+  items.forEach((el, i) => {
+    el.classList.toggle("active", visible[i] && visible[i].id === selectedSpecies);
+  });
+  pickerOverlay.classList.add("open");
+}
+function closePicker() { pickerOverlay.classList.remove("open"); }
+
+currentElBtn.addEventListener("click", openPicker);
+pickerOverlay.addEventListener("click", (e) => {
+  if (e.target === pickerOverlay) closePicker();
+});
+brushSlider.addEventListener("input", () => { brushSize = parseInt(brushSlider.value, 10); });
+refreshCurrent();
+refreshQuickBar();
+fitToolbar();
+window.addEventListener("resize", fitToolbar);
+// fab-bar visibility (and width) changes whenever the user enters/exits a
+// drawing session, the send progress bar appears, or the apply countdown
+// runs — all of which can push the right side of the header off-screen.
+// A ResizeObserver fires on each of those size changes and re-fits.
+try {
+  const _fabResizeObserver = new ResizeObserver(() => fitToolbar());
+  _fabResizeObserver.observe(document.getElementById("fab-bar"));
+} catch (_) {
+  // Older WebViews may not have ResizeObserver; window resize alone is
+  // enough to handle viewport changes — fab-bar growth on a wide-enough
+  // screen wasn't the failure mode this fix targets.
+}
+
+// =============================================================================
+// CANVAS SETUP
+// =============================================================================
+
+const canvas = document.getElementById("sand-canvas");
+const overlayCanvas = document.getElementById("overlay-canvas");
+const overlayCtx = overlayCanvas.getContext("2d");
+const canvasContainer = document.getElementById("canvas-container");
+let redrawOverlay = function() {};
+
+function sizeCanvas() {
+  const wrap = document.getElementById("canvas-wrap");
+  const maxW = wrap.clientWidth - 8;
+  const maxH = wrap.clientHeight - 8;
+  const aspect = WIDTH / HEIGHT;
+  let w, h;
+  if (maxW / maxH > aspect) { h = Math.max(1, maxH); w = Math.round(h * aspect); }
+  else { w = Math.max(1, maxW); h = Math.round(w / aspect); }
+  canvasContainer.style.width = w + "px";
+  canvasContainer.style.height = h + "px";
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  overlayCanvas.style.width = w + "px";
+  overlayCanvas.style.height = h + "px";
+  overlayCanvas.width = WIDTH;
+  overlayCanvas.height = HEIGHT;
+  redrawOverlay();
+}
+sizeCanvas();
+window.addEventListener("resize", sizeCanvas);
+
+// =============================================================================
+// WEBGL RENDERER
+// =============================================================================
+
+let cellData = new Uint8Array(WIDTH * HEIGHT * CELL_BYTES);
+
+if (typeof createREGL === "undefined") {
+  document.getElementById("status").className = "err";
+  document.getElementById("status").textContent = "Error: regl library failed to load";
+  throw new Error("regl not loaded");
+}
+
+let regl, dataTexture;
+try {
+  regl = createREGL({ canvas, attributes: { preserveDrawingBuffer: false } });
+  dataTexture = regl.texture({
+    width: HEIGHT, height: WIDTH, data: cellData,
+    min: 'nearest', mag: 'nearest',
+    wrapS: 'clamp', wrapT: 'clamp',
+    format: 'rgba', type: 'uint8',
+  });
+} catch (e) {
+  document.getElementById("status").className = "err";
+  document.getElementById("status").textContent = "WebGL error: " + e.message;
+  throw e;
+}
+
+const VERTEX_SHADER = `
+precision mediump float;
+attribute vec2 position;
+varying vec2 uv;
+void main() {
+  uv = position;
+  gl_Position = vec4(position, 0, 1);
+}`;
+
+const FRAGMENT_SHADER = `
+precision mediump float;
+uniform float t;
+uniform float dpi;
+uniform vec2 resolution;
+uniform sampler2D data;
+varying vec2 uv;
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec3 mod289_3(vec3 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+vec2 mod289_2(vec2 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 mod289_4(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+vec3 permute3(vec3 x) { return mod289_3(((x*34.0)+1.0)*x); }
+vec4 permute4(vec4 x) { return mod289_4(((x*34.0)+1.0)*x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise2(vec2 v) {
+  const vec4 C = vec4( 0.211324865405187, 0.366025403784439,
+                       -0.577350269189626, 0.024390243902439);
+  vec2 i  = floor(v + dot(v, C.yy));
+  vec2 x0 = v - i + dot(i, C.xx);
+  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289_2(i);
+  vec3 p = permute3(permute3(i.y + vec3(0.0, i1.y, 1.0))
+                             + i.x + vec3(0.0, i1.x, 1.0));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
+                           dot(x12.zw,x12.zw)), 0.0);
+  m = m*m; m = m*m;
+  vec3 xh = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h  = abs(xh) - 0.5;
+  vec3 ox = floor(xh + 0.5);
+  vec3 a0 = xh - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+  vec3 g;
+  g.x  = a0.x * x0.x  + h.x * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+float snoise3(vec3 v) {
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v   - i + dot(i, C.xxx);
+  vec3 g  = step(x0.yzx, x0.xyz);
+  vec3 l  = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289_3(i);
+  vec4 p = permute4(permute4(permute4(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j  = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x  = x_ * ns.x + ns.yyyy;
+  vec4 y  = y_ * ns.x + ns.yyyy;
+  vec4 hz = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(hz, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, hz.x);
+  vec3 p1 = vec3(a0.zw, hz.y);
+  vec3 p2 = vec3(a1.xy, hz.z);
+  vec3 p3 = vec3(a1.zw, hz.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+
+void main() {
+  vec2 textCoord = ((uv * vec2(0.5, -0.5)) + vec2(0.5)).yx;
+  vec4 d = texture2D(data, textCoord);
+  int type = int((d.r * 255.0) + 0.1);
+
+  float hue = 0.0;
+  float saturation = 0.6;
+  float lightness = 0.3 + d.g * 0.5;
+  float noise = snoise3(vec3(floor(uv * resolution / dpi), t * 0.05));
+  float a = 1.0;
+
+  if (type == 0) { hue = 0.0; saturation = 0.1; lightness = 0.1; a = 0.1; }
+  else if (type == 1) { hue = 0.1; saturation = 0.1; lightness = 0.4; }
+  else if (type == 2) { hue = 0.1; saturation = 0.5; lightness += 0.3; }
+  else if (type == 3) {
+    hue = 0.6;
+    lightness = 0.7 + d.g * 0.25 + noise * 0.1;
+    int polarity = int(mod(d.g * 255.0, 2.0) + 0.1);
+    if (polarity == 0) lightness += 0.01;
+  }
+  else if (type == 4) { hue = 0.0; lightness += 0.4; saturation = 0.2 + (d.b * 1.5); }
+  else if (type == 5) { hue = 0.9; saturation = 0.3; }
+  else if (type == 6) { hue = d.g * 0.1; saturation = 0.7; lightness = 0.7 + (d.g * 0.3) + ((noise + 0.8) * 0.5); }
+  else if (type == 7) { hue = d.g * 0.1; saturation = 0.3; lightness = 0.3 + d.g * 0.3; }
+  else if (type == 8) { hue = d.g * 0.1; lightness = 0.7 + d.g * 0.25 + noise * 0.1; }
+  else if (type == 9) { hue = 0.6; saturation = 0.4; lightness = 0.7 + d.g * 0.5; }
+  else if (type == 10) { hue = 0.9; saturation = 0.4; lightness = 1.0; }
+  else if (type == 11) { hue = 0.4; saturation = 0.4; }
+  else if (type == 12) { hue = 0.18; saturation = 0.9; lightness = 0.8 + d.g * 0.2 + noise * 0.05; }
+  else if (type == 13) { hue = -0.4 + (d.g * 0.5); saturation = 0.1; }
+  else if (type == 14) { hue = (d.g * 2.0) + t * 0.0008; saturation = 0.4; lightness = 0.8; }
+  else if (type == 15) { hue = 0.8; saturation = 0.9; lightness = 0.8; }
+  else if (type == 16) { hue = (d.g * 5.0) + t * 0.008; saturation = 0.2; lightness = 0.3; }
+  else if (type == 17) { hue = 0.0; saturation = 0.4 + d.b; lightness = 0.9; }
+  else if (type == 18) { hue = (d.g * 0.15) - 0.1; saturation = (d.g * 0.8) - 0.05; lightness = 1.5 - (d.g * 0.2); }
+  else if (type == 19) { hue = fract(fract(d.b * 2.0) * 0.5) - 0.3; saturation = 0.7 * (d.g + 0.4) + d.b * 0.2; lightness = 0.9 * (d.g + 0.9); }
+  else if (type == 20) { hue = 0.6; saturation = 0.5; lightness = 0.35 + d.g * 0.15; }
+  else if (type == 21) { hue = 0.1; saturation = 0.35; lightness = 0.35 + d.g * 0.15; }
+  else if (type == 22) { hue = 0.05; saturation = 0.6; lightness = 0.4 + d.g * 0.15 + noise * 0.08; }
+  else if (type == 23) { hue = 0.7; saturation = 0.15; lightness = 0.15 + d.g * 0.1; }
+
+  lightness *= (0.975 + snoise2(floor(uv * resolution / dpi)) * 0.025);
+  gl_FragColor = vec4(hsv2rgb(vec3(hue, saturation, lightness)), a);
+}`;
+
+const drawSand = regl({
+  frag: FRAGMENT_SHADER,
+  vert: VERTEX_SHADER,
+  uniforms: {
+    t: ({ tick }) => tick,
+    data: () => dataTexture({
+      width: HEIGHT, height: WIDTH, data: cellData,
+      min: 'nearest', mag: 'nearest',
+      wrapS: 'clamp', wrapT: 'clamp',
+    }),
+    resolution: ({ viewportWidth, viewportHeight }) => [viewportWidth, viewportHeight],
+    dpi: window.devicePixelRatio * 2,
+  },
+  attributes: { position: [[-1, 4], [-1, -1], [4, -1]] },
+  count: 3,
+});
+
+function renderFrame() {
+  regl.poll();
+  drawSand();
+  requestAnimationFrame(renderFrame);
+}
+renderFrame();
+
+// =============================================================================
+// LOCAL WASM SIMULATION ENGINE
+// =============================================================================
+
+const statusEl = document.getElementById("status");
+const fpsEl = document.getElementById("fps-display");
+
+let errorStickyUntil = 0;
+const ERROR_HOLD_MS = 8000;
+
+function showError(msg) {
+  statusEl.className = "err";
+  statusEl.textContent = msg;
+  errorStickyUntil = performance.now() + ERROR_HOLD_MS;
+}
+
+function canOverwriteStatus() {
+  return performance.now() >= errorStickyUntil;
+}
+
+// ── Simulation state (populated after WASM loads) ───────────────────────────
+let universe = null;
+let wasmMemory = null;
+let wasmPrng = null;
+let FRAME_SIZE = 0;
+
+let simTick = 0;              // current simulation tick number
+let clientActiveUntilTick = 0; // server's physics window end — client freezes past this
+let pendingTxs = [];          // transactions buffered for future ticks, sorted by tick
+let appliedTxCount = 0;
+
+// Checkpoints for rewind: [{tick, cells: Uint8Array}]
+let checkpoints = [];
+let lastCheckpointTick = 0;
+
+let ticksThisSecond = 0;
+let lastFpsTime = performance.now();
+
+// ── Draw helpers (same as server engine.js) ─────────────────────────────────
+
+function segmentToPoints(seg) {
+  const [x1, y1, x2, y2, size] = seg;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const step = Math.max(1, Math.floor(size * 0.6));
+  const steps = Math.max(1, Math.ceil(dist / step));
+  const points = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = steps === 0 ? 0 : i / steps;
+    points.push({ x: Math.round(x1 + dx * t), y: Math.round(y1 + dy * t) });
+  }
+  return points;
+}
+
+function applyDrawMemo(memo) {
+  if (!universe) return;
+  if (memo.app !== "falling-sands" || memo.type !== "draw" || !Array.isArray(memo.s)) return;
+  for (const seg of memo.s) {
+    if (!Array.isArray(seg) || seg.length < 6) continue;
+    const species = seg[5] | 0;
+    const size = Math.max(1, Math.min(20, seg[4] | 0));
+    const pts = segmentToPoints(seg);
+    for (const pt of pts) {
+      const x = Math.max(0, Math.min(WIDTH - 1, pt.x | 0));
+      const y = Math.max(0, Math.min(HEIGHT - 1, pt.y | 0));
+      universe.paint(x, y, size, species);
+    }
+  }
+}
+
+// ── Checkpoint system ───────────────────────────────────────────────────────
+
+function saveCheckpoint() {
+  if (!universe || !wasmMemory) return;
+  checkpoints.push({
+    tick: simTick,
+    cells: new Uint8Array(new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE)),
+    winds: new Uint8Array(new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE)),
+    burns: new Uint8Array(new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE)),
+    prngState: wasmPrng ? wasmPrng.getState() : 0,
+    generation: universe.generation ? universe.generation() : 0,
+    rngState: universe.rng_state ? universe.rng_state() : BigInt(0),
+  });
+  if (checkpoints.length > MAX_CHECKPOINTS) checkpoints.shift();
+  lastCheckpointTick = simTick;
+}
+
+function restoreCheckpoint(cp) {
+  if (!universe || !wasmMemory) return;
+  new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE).set(cp.cells);
+  new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE).set(cp.winds);
+  new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE).set(cp.burns);
+  if (wasmPrng && cp.prngState !== undefined) wasmPrng.setState(cp.prngState);
+  if (universe.set_generation && cp.generation !== undefined) universe.set_generation(cp.generation);
+  if (universe.set_rng_state && cp.rngState !== undefined) universe.set_rng_state(cp.rngState);
+  simTick = cp.tick;
+}
+
+function rewindToTick(targetTick) {
+  let best = null;
+  for (const cp of checkpoints) {
+    if (cp.tick <= targetTick && (!best || cp.tick > best.tick)) {
+      best = cp;
+    }
+  }
+  if (!best) return false;
+  restoreCheckpoint(best);
+  return true;
+}
+
+// ── Transaction buffering ───────────────────────────────────────────────────
+
+function addPendingTx(tx) {
+  const tick = timestampToTick(tx.timestamp_ms);
+  const nowMs = Date.now();
+  const ageS = ((nowMs - tx.timestamp_ms) / 1000).toFixed(1);
+  const renderTick = timestampToTick(nowMs - RENDER_DELAY_MS);
+  const delta = tick - simTick;
+  const label = delta > 0 ? `future(+${delta})` : delta === 0 ? "exact" : `late(${delta})`;
+  console.log(`[sands-tx] rx: age=${ageS}s  txTick=${tick}  simTick=${simTick}  renderTick=${renderTick}  ${label}`);
+
+  // Extend the active window when a draw arrives — matches server behavior.
+  const isDraw = tx.memo && tx.memo.app === "falling-sands" && tx.memo.type === "draw";
+  if (isDraw) {
+    clientActiveUntilTick = Math.max(clientActiveUntilTick, tick + WINDOW_TICKS);
+  }
+
+  // Match incoming tx to our sent overlay so we can clear it at the right tick.
+  if (sentStrokes.length > 0 && sentMemoJson && isDraw) {
+    try {
+      const incoming = JSON.stringify(tx.memo);
+      if (incoming === sentMemoJson) {
+        const applyAtMs = TICK_EPOCH + tick * TICK_INTERVAL_MS;
+        const remainS = ((applyAtMs - Date.now()) / 1000).toFixed(2);
+        console.log(`[sands-send] matched outstanding send → applyTick=${tick} applyAt=${new Date(applyAtMs).toISOString()} remain=${remainS}s`);
+        sentStrokesApplyTick = tick;
+        pendingApplyAtMs = applyAtMs;
+        sentMemoJson = null;
+      } else {
+        // Useful when triaging "pending overlay never clears": confirms the
+        // tx arrived via WS but the memo string didn't match (key order or
+        // value drift). The match logic depends on JS preserving insertion
+        // order for plain objects, which is true on every modern engine.
+        console.warn(`[sands-send] tx received but did not match outstanding send`);
+      }
+    } catch (_) {}
+  }
+
+  const entry = { tick, memo: tx.memo, from: tx.from };
+
+  if (tick <= simTick) {
+    // Late transaction — need to rewind
+    if (rewindToTick(tick)) {
+      console.log(`[sands-tx] rewind: restored to tick ${simTick}, replaying to ${renderTick}`);
+      // Re-insert all pending txs that are after the rewind point
+      const allPending = pendingTxs.filter(t => t.tick >= simTick);
+      allPending.push(entry);
+      allPending.sort((a, b) => a.tick - b.tick);
+      pendingTxs = allPending;
+      // Fast-forward back to where we were
+      fastForwardTo(timestampToTick(Date.now() - RENDER_DELAY_MS));
+    } else {
+      console.warn(`[sands-tx] no checkpoint for rewind — applying immediately (best effort)`);
+      if (entry.memo) applyDrawMemo(entry.memo);
+    }
+    // Late tx already applied — clear overlay immediately if it was ours.
+    if (sentStrokesApplyTick !== null && simTick >= sentStrokesApplyTick) {
+      sentStrokes = [];
+      sentStrokesApplyTick = null;
+      redrawOverlay();
+    }
+  } else {
+    // Future transaction — insert sorted
+    let idx = pendingTxs.length;
+    while (idx > 0 && pendingTxs[idx - 1].tick > tick) idx--;
+    pendingTxs.splice(idx, 0, entry);
+  }
+  appliedTxCount++;
+}
+
+// ── Fast-forward (for catch-up and rewind replay) ───────────────────────────
+
+function fastForwardTo(targetTick) {
+  if (!universe) return;
+  while (simTick < targetTick) {
+    // Apply any transactions scheduled for this tick
+    while (pendingTxs.length > 0 && pendingTxs[0].tick <= simTick) {
+      const tx = pendingTxs.shift();
+      if (tx.memo) applyDrawMemo(tx.memo);
+    }
+    universe.tick();
+    simTick++;
+
+    if (simTick - lastCheckpointTick >= CHECKPOINT_INTERVAL_TICKS) {
+      saveCheckpoint();
+    }
+  }
+}
+
+// ── Simulation tick (called at 30Hz) ────────────────────────────────────────
+
+function simTick30Hz() {
+  if (!universe) return;
+
+  const wallTick = timestampToTick(Date.now());
+  let ticksToRun = Math.max(1, wallTick - simTick);
+
+  // Within the server's active window, fast-forward the full gap so the
+  // client stays deterministically in sync (handles background recovery).
+  // Past the window, the client runs speculative local physics at 30Hz —
+  // cap at 1 tick per frame so it doesn't try to fast-forward hours of
+  // frozen time.  If the gap somehow exceeds 10 minutes (e.g. very long
+  // background), just jump the tick counter and resume live.
+  if (simTick >= clientActiveUntilTick) {
+    ticksToRun = 1;
+  } else if (ticksToRun > WINDOW_TICKS) {
+    simTick = Math.max(wallTick - 1, clientActiveUntilTick);
+    ticksToRun = Math.max(1, wallTick - simTick);
+  }
+
+  for (let i = 0; i < ticksToRun; i++) {
+    while (pendingTxs.length > 0 && pendingTxs[0].tick <= simTick) {
+      const tx = pendingTxs.shift();
+      if (tx.memo) applyDrawMemo(tx.memo);
+    }
+    universe.tick();
+    simTick++;
+    ticksThisSecond++;
+
+    if (simTick - lastCheckpointTick >= CHECKPOINT_INTERVAL_TICKS) {
+      saveCheckpoint();
+    }
+  }
+
+  if (sentStrokes.length > 0) {
+    const applied = sentStrokesApplyTick !== null && simTick >= sentStrokesApplyTick;
+    const expired = Date.now() >= sentStrokesDeadline;
+    if (applied || expired) {
+      if (expired && !applied) {
+        console.warn(`[sands-send] pending overlay cleared by 60s deadline — never matched a WS broadcast`);
+      }
+      sentStrokes = [];
+      sentMemoJson = null;
+      sentStrokesApplyTick = null;
+      redrawOverlay();
+    }
+  }
+
+  const cellPtr = universe.cells();
+  const cells = new Uint8Array(wasmMemory.buffer, cellPtr, FRAME_SIZE);
+  cellData.set(cells);
+
+  // FPS counter
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    fpsEl.textContent = `${ticksThisSecond} tps`;
+    if (canOverwriteStatus()) {
+      statusEl.className = "ok";
+      statusEl.textContent = "Running locally";
+    }
+    ticksThisSecond = 0;
+    lastFpsTime = now;
+  }
+}
+
+// ── Debug hash display (?debug query param) ────────────────────────────────
+
+const DEBUG_MODE = new URLSearchParams(window.location.search).has("debug");
+const debugHashEl = document.getElementById("debug-hash");
+if (DEBUG_MODE && debugHashEl) debugHashEl.classList.add("visible");
+
+async function computeCellHash() {
+  if (!universe || !wasmMemory || !FRAME_SIZE) return null;
+  const cellPtr = universe.cells();
+  const cells = new Uint8Array(wasmMemory.buffer, cellPtr, FRAME_SIZE);
+  const digest = await crypto.subtle.digest("SHA-256", cells);
+  const arr = new Uint8Array(digest);
+  let hex = "";
+  for (let i = 0; i < arr.length; i++) hex += arr[i].toString(16).padStart(2, "0");
+  return hex;
+}
+
+if (DEBUG_MODE) {
+  setInterval(async () => {
+    const hash = await computeCellHash();
+    if (hash && debugHashEl) {
+      debugHashEl.textContent = `t:${simTick} #${hash.slice(0, 12)}`;
+    }
+  }, 5000);
+}
+
+// ── Load snapshot into WASM memory ──────────────────────────────────────────
+
+function loadSnapshot(snapshot) {
+  if (!universe || !wasmMemory || !snapshot) return;
+
+  const compressed = Uint8Array.from(atob(snapshot.cells_b64), c => c.charCodeAt(0));
+  const raw = pako.inflate(compressed);
+
+  if (snapshot.buffers === 3 && raw.length === FRAME_SIZE * 3) {
+    new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE).set(raw.subarray(0, FRAME_SIZE));
+    new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE).set(raw.subarray(FRAME_SIZE, FRAME_SIZE * 2));
+    new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE).set(raw.subarray(FRAME_SIZE * 2, FRAME_SIZE * 3));
+    cellData.set(raw.subarray(0, FRAME_SIZE));
+  } else {
+    new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE).set(raw);
+    cellData.set(raw);
+  }
+
+  if (wasmPrng && snapshot.prng_state !== undefined) wasmPrng.setState(snapshot.prng_state);
+  if (universe.set_generation && snapshot.generation !== undefined) universe.set_generation(snapshot.generation);
+  if (universe.set_rng_state && snapshot.wasm_rng_state !== undefined) {
+    universe.set_rng_state(BigInt(snapshot.wasm_rng_state));
+  }
+  simTick = snapshot.tick;
+  checkpoints = [];
+  lastCheckpointTick = simTick;
+  saveCheckpoint();
+}
+
+// =============================================================================
+// WEBSOCKET — Transaction Relay
+// =============================================================================
+
+let ws = null;
+
+const WS_STAGGER       = 200;
+const WS_POOL_SIZE     = 3;
+const WS_ROUND_TIMEOUT = 800;
+const WS_ROUND_GAP     = 100;
+const WS_MAX_ROUNDS    = 20;
+
+// Application-level heartbeat. The browser WS API doesn't surface
+// protocol-level pings/pongs to JS, so we send our own. Server already
+// replies "pong" to a "ping" string (see engine.js ws.on("message")). If
+// no message arrives within WS_HEARTBEAT_TIMEOUT_MS we treat the socket as
+// silently dead (laptop sleep, NAT timeout, network switch) and force a
+// reconnect — otherwise the WS stays in OPEN state forever and tx
+// broadcasts vanish into the void, with the only fix being a page refresh.
+//
+// Interval 10s + timeout 25s means we send 2-3 pings before declaring
+// the socket dead. Keeps recovery faster than the user's "I'll just
+// refresh" reflex (typically 20-30s after they notice nothing happening).
+const WS_HEARTBEAT_INTERVAL_MS = 10_000;
+const WS_HEARTBEAT_TIMEOUT_MS  = 25_000;
+// Threshold for the status indicator to switch from "live" to "quiet".
+// The watchdog will reconnect at WS_HEARTBEAT_TIMEOUT_MS; "quiet" is
+// the in-between visual.
+const WS_QUIET_AFTER_MS        = 12_000;
+
+let wsRound = 0;
+let wsTotalAttempts = 0;
+let lastWsActivityMs = 0;
+
+const debugLines = [];
+function dbg(msg) {
+  const t = (performance.now() / 1000).toFixed(2);
+  const line = `[${t}] ${msg}`;
+  console.log(line);
+  debugLines.push(line);
+  if (debugLines.length > 6) debugLines.shift();
+  statusEl.textContent = debugLines.join(" | ");
+}
+
+function handleMessage(event) {
+  // Any inbound message — including server's "pong" reply — counts as
+  // liveness. Stamp before short-circuiting so the heartbeat watchdog
+  // sees activity even on non-JSON traffic.
+  lastWsActivityMs = Date.now();
+
+  if (typeof event.data !== "string") return; // only JSON messages now
+  if (event.data === "pong") return;           // heartbeat reply, no body
+
+  try {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === "init") {
+      // Use the server's epoch (derived from chain genesis) for tick calculations.
+      if (msg.epoch && typeof msg.epoch === "number") {
+        TICK_EPOCH = msg.epoch;
+      }
+
+      if (msg.adminPubkey !== undefined) {
+        adminPubkey = msg.adminPubkey || null;
+        maybeShowAdminUI();
+      }
+
+      // Config
+      if (msg.config) {
+        WIDTH = msg.config.width || WIDTH;
+        HEIGHT = msg.config.height || HEIGHT;
+        if (msg.config.sources != null) {
+          sourcesEnabled = !!msg.config.sources;
+          rebuildPicker();
+        }
+      }
+
+      setLoading(50, "Loading snapshot...");
+
+      // Load snapshot
+      if (msg.snapshot) {
+        loadSnapshot(msg.snapshot);
+      }
+
+      // Buffer transactions since snapshot
+      pendingTxs = [];
+      if (msg.transactions && Array.isArray(msg.transactions)) {
+        for (const tx of msg.transactions) {
+          const tick = timestampToTick(tx.timestamp_ms);
+          pendingTxs.push({ tick, memo: tx.memo, from: tx.from });
+          // Reconnects (heartbeat-triggered or otherwise) deliver
+          // confirmed txs via init.transactions instead of live "tx"
+          // messages. Match the user's outstanding send here too so the
+          // pending overlay clears as soon as the sim catches up, rather
+          // than waiting on the 60s sentStrokesDeadline.
+          if (sentStrokes.length > 0 && sentMemoJson) {
+            try {
+              if (JSON.stringify(tx.memo) === sentMemoJson) {
+                sentStrokesApplyTick = tick;
+                pendingApplyAtMs = TICK_EPOCH + tick * TICK_INTERVAL_MS;
+                sentMemoJson = null;
+              }
+            } catch (_) {}
+          }
+        }
+        pendingTxs.sort((a, b) => a.tick - b.tick);
+      }
+
+      // Track the server's active physics window. Within this window the
+      // server also simulated physics, so the client should fast-forward
+      // deterministically to stay in sync. Past the window end the client
+      // runs speculative local physics at 30Hz (the tick loop handles this).
+      clientActiveUntilTick = msg.activeUntilTick || simTick;
+
+      // Fast-forward behind the loading bar up to wall-clock time (capped
+      // at the server's window end — beyond that we go live at 30Hz).
+      {
+        const wallTick = timestampToTick(Date.now());
+        const targetTick = msg.frozen ? simTick : Math.min(wallTick, clientActiveUntilTick);
+        if (targetTick > simTick) {
+          setLoading(70, "Catching up...");
+          console.log(`[sands-init] fast-forwarding ${targetTick - simTick} ticks to catch up`);
+          fastForwardTo(targetTick);
+        }
+      }
+
+      console.log(`[sands-init] ready at tick ${simTick}, frozen=${!!msg.frozen}, activeUntil=${clientActiveUntilTick}`);
+
+      statusEl.className = "ok";
+      statusEl.textContent = "Running locally";
+      // Engine side of the loader gate is satisfied. If the chain side
+      // (pollChainReady) has also flipped, this dismisses the overlay
+      // immediately; otherwise the chain poller takes over the loader
+      // text and dismisses once Synced + sands stream is up.
+      _engineLoaderReady = true;
+      if (_chainLoaderReady) {
+        setLoading(100, "Ready!");
+      } else {
+        setLoading(80, "Waiting for node\u2026");
+      }
+      tryDismissLoader();
+
+      if (!localStorage.getItem("sands:introDismissed")) {
+        setTimeout(() => {
+          const ov = document.getElementById("info-overlay");
+          if (ov) ov.classList.add("open");
+        }, 600);
+      }
+
+      if (simInterval) clearInterval(simInterval);
+      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+
+    } else if (msg.type === "resync") {
+      // Error-recovery fallback: reload snapshot and restart simulation.
+      // Normal draws arrive as lightweight "tx" messages instead. Admin
+      // resets also come through here — the server wipes state, captures
+      // a fresh snapshot, and resyncs everyone at once.
+      console.warn("[sands-resync] received full resync (admin reset or error recovery)");
+      if (msg.epoch && typeof msg.epoch === "number") TICK_EPOCH = msg.epoch;
+      if (msg.adminPubkey !== undefined) {
+        adminPubkey = msg.adminPubkey || null;
+        maybeShowAdminUI();
+      }
+
+      if (simInterval) clearInterval(simInterval);
+      simInterval = null;
+
+      if (msg.snapshot) loadSnapshot(msg.snapshot);
+      pendingTxs = [];
+      // Reseed pendingTxs from the resync transactions and run the same
+      // outstanding-send matcher we use on init, so the user's pending
+      // overlay clears once the sim catches up rather than waiting on the
+      // sentStrokesDeadline.
+      if (msg.transactions && Array.isArray(msg.transactions)) {
+        for (const tx of msg.transactions) {
+          const tick = timestampToTick(tx.timestamp_ms);
+          pendingTxs.push({ tick, memo: tx.memo, from: tx.from });
+          if (sentStrokes.length > 0 && sentMemoJson) {
+            try {
+              if (JSON.stringify(tx.memo) === sentMemoJson) {
+                console.log("[sands-send] matched outstanding send during resync");
+                sentStrokesApplyTick = tick;
+                pendingApplyAtMs = TICK_EPOCH + tick * TICK_INTERVAL_MS;
+                sentMemoJson = null;
+              }
+            } catch (_) {}
+          }
+        }
+        pendingTxs.sort((a, b) => a.tick - b.tick);
+      }
+      clientActiveUntilTick = msg.activeUntilTick || (simTick + WINDOW_TICKS);
+
+      const wallTick = timestampToTick(Date.now());
+      const targetTick = Math.min(wallTick, clientActiveUntilTick);
+      if (targetTick > simTick) fastForwardTo(targetTick);
+
+      console.log(`[sands-resync] recovered at tick ${simTick}`);
+      statusEl.className = "ok";
+      statusEl.textContent = "Running locally";
+      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+
+    } else if (msg.type === "loading") {
+      const pct = Math.round((msg.progress || 0) * 100);
+      setLoading(Math.min(pct, 45), "Server loading\u2026 " + pct + "%");
+
+    } else if (msg.type === "tx") {
+      addPendingTx(msg);
+    }
+  } catch (e) {
+    console.warn("WS message parse error:", e);
+  }
+}
+
+let simInterval = null;
+
+function startRound() {
+  if (document.visibilityState === "hidden") return;
+  wsRound++;
+  const rid = wsRound;
+  dbg(`round ${rid}`);
+
+  const sockets = [];
+  const timers = [];
+  let won = false;
+
+  function cleanup(winner) {
+    for (const t of timers) clearTimeout(t);
+    for (const s of sockets) {
+      if (s !== winner) {
+        s.onopen = s.onclose = s.onerror = s.onmessage = null;
+        try { s.close(); } catch (_) {}
+      }
+    }
+  }
+
+  function createSocket() {
+    if (won) return;
+    wsTotalAttempts++;
+    const idx = sockets.length + 1;
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${location.host}`;
+    dbg(`R${rid}.${idx} new WS`);
+
+    const sock = new WebSocket(url);
+    sock.binaryType = "arraybuffer";
+    sockets.push(sock);
+
+    sock.onopen = () => {
+      if (won) {
+        sock.onopen = sock.onclose = sock.onerror = sock.onmessage = null;
+        try { sock.close(); } catch (_) {}
+        return;
+      }
+      won = true;
+      cleanup(sock);
+      ws = sock;
+      lastWsActivityMs = Date.now();
+      dbg(`R${rid}.${idx} connected`);
+      if (canOverwriteStatus()) statusEl.className = "ok";
+      try { sock.send(JSON.stringify({ type: "ready" })); }
+      catch (e) { dbg(`send-ready err: ${e.message}`); }
+    };
+
+    sock.onmessage = handleMessage;
+    sock.onerror = () => { dbg(`R${rid}.${idx} onerror`); };
+    sock.onclose = (ev) => {
+      if (won && sock === ws) {
+        dbg(`close code=${ev.code}`);
+        ws = null;
+        if (simInterval) { clearInterval(simInterval); simInterval = null; }
+        statusEl.className = "err";
+        setTimeout(startRound, WS_ROUND_GAP);
+      }
+    };
+  }
+
+  createSocket();
+  for (let i = 1; i < WS_POOL_SIZE; i++) {
+    timers.push(setTimeout(() => { if (!won) createSocket(); }, WS_STAGGER * i));
+  }
+
+  timers.push(setTimeout(() => {
+    if (won) return;
+    dbg(`R${rid} TIMEOUT`);
+    cleanup(null);
+    if (wsRound < WS_MAX_ROUNDS) {
+      setTimeout(startRound, WS_ROUND_GAP);
+    } else {
+      dbg("Gave up after " + WS_MAX_ROUNDS + " rounds");
+      statusEl.className = "err";
+      statusEl.textContent = "Connection failed — tap to retry";
+      document.body.addEventListener("click", () => { wsRound = 0; startRound(); }, { once: true });
+    }
+  }, WS_ROUND_TIMEOUT));
+}
+
+// =============================================================================
+// WASM INITIALIZATION
+// =============================================================================
+
+(async function initWasm() {
+  try {
+    setLoading(10, "Loading simulation engine...");
+    statusEl.textContent = "Loading WASM...";
+    const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
+    universe = wasm.Universe.new(WIDTH, HEIGHT);
+    wasmMemory = wasm.memory;
+    wasmPrng = wasm.prng || null;
+    FRAME_SIZE = WIDTH * HEIGHT * CELL_BYTES;
+
+    // Apply initial flags (same as server)
+    const openBottom = true;
+    const sourcesEnabledInit = true;
+    const plantAbsorbs = true;
+    let flags = 0;
+    if (openBottom) flags |= 1;    // FLAG_OPEN_BOTTOM
+    if (sourcesEnabledInit) flags |= 2; // FLAG_SOURCES
+    if (plantAbsorbs) flags |= 4;  // FLAG_PLANT_ABSORBS
+    if (flags) universe.set_flags(flags);
+
+    setLoading(30, "Connecting to server...");
+    statusEl.textContent = "Connecting...";
+    scheduleConnect();
+  } catch (e) {
+    setLoading(0, "Failed to load — tap to retry");
+    showError("WASM load failed: " + e.message);
+    console.error(e);
+  }
+})();
+
+function scheduleConnect() {
+  requestAnimationFrame(() => setTimeout(startRound, 50));
+}
+
+// Heartbeat watchdog (set up once at load — survives reconnects).
+// Sends "ping" to the active socket; force-closes if the server has gone
+// silent for longer than WS_HEARTBEAT_TIMEOUT_MS. The existing onclose
+// handler will reconnect via startRound().
+setInterval(() => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (lastWsActivityMs && Date.now() - lastWsActivityMs > WS_HEARTBEAT_TIMEOUT_MS) {
+    dbg("heartbeat timeout — closing for reconnect");
+    try { ws.close(); } catch (_) {}
+    return;
+  }
+  try { ws.send("ping"); } catch (_) {}
+}, WS_HEARTBEAT_INTERVAL_MS);
+
+// ── WS connection indicator ──────────────────────────────────────────────
+// Single-source updater that reflects current ws state + last-message age
+// in the status bar. Runs every 1s; cheap.
+const wsIndicatorEl    = document.getElementById("ws-indicator");
+const wsIndicatorLabel = wsIndicatorEl ? wsIndicatorEl.querySelector(".label") : null;
+
+function updateWsIndicator() {
+  if (!wsIndicatorEl) return;
+  const state = ws ? ws.readyState : 3; // 3 = CLOSED when no socket
+  let cls, label, title;
+  if (state === WebSocket.OPEN) {
+    const age = lastWsActivityMs ? Date.now() - lastWsActivityMs : 0;
+    if (age > WS_QUIET_AFTER_MS) {
+      cls = "quiet";
+      label = "quiet";
+      title = `Connected, no messages in ${Math.round(age / 1000)}s — will reconnect at ${Math.round(WS_HEARTBEAT_TIMEOUT_MS / 1000)}s`;
+    } else {
+      cls = "live";
+      label = "live";
+      title = age > 1500
+        ? `Connected (last message ${Math.round(age / 1000)}s ago)`
+        : "Connected";
+    }
+  } else if (state === WebSocket.CONNECTING) {
+    cls = "connecting";
+    label = "connecting";
+    title = "Connecting to server...";
+  } else {
+    cls = "offline";
+    label = "offline";
+    title = "Disconnected — reconnecting...";
+  }
+  if (wsIndicatorEl.dataset.cls !== cls) {
+    wsIndicatorEl.className = cls;
+    wsIndicatorEl.dataset.cls = cls;
+  }
+  if (wsIndicatorLabel && wsIndicatorLabel.textContent !== label) {
+    wsIndicatorLabel.textContent = label;
+  }
+  wsIndicatorEl.title = title;
+}
+updateWsIndicator();
+setInterval(updateWsIndicator, 1000);
+
+// Click the indicator to force a reconnect — useful when the watchdog
+// hasn't fired yet (e.g. user is suspicious of a zombie connection).
+if (wsIndicatorEl) {
+  wsIndicatorEl.style.cursor = "pointer";
+  wsIndicatorEl.addEventListener("click", () => {
+    dbg("manual reconnect requested via WS indicator");
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.close(); } catch (_) {}
+    } else if (!ws || ws.readyState === WebSocket.CLOSED) {
+      wsRound = 0;
+      setTimeout(startRound, 100);
+    }
+  });
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && (!ws || ws.readyState !== WebSocket.OPEN)) {
+    wsRound = 0;
+    setTimeout(startRound, 200);
+  }
+});
+
+// =============================================================================
+// STAGED PAINT
+// =============================================================================
+
+let pendingStrokes = [];
+let sentStrokes = [];
+let sentMemoJson = null;
+let sentStrokesApplyTick = null;
+let sentStrokesDeadline = 0;
+
+// Wall-clock moment our outstanding send is scheduled to apply, captured the
+// moment its WS broadcast arrives. Decoupled from sentStrokesApplyTick so the
+// rewind/clearing logic in addPendingTx (which nulls sentStrokesApplyTick the
+// moment a late tx is rewound into the past) can't kill the countdown UI.
+// Cleared only by the countdown itself or a fresh send.
+let pendingApplyAtMs = null;
+let painting = false;
+let lastPaintPos = null;
+let dragStartIdx = 0;
+
+const fabBar       = document.getElementById("fab-bar");
+const btnSend      = document.getElementById("btn-send");
+const btnDiscard   = document.getElementById("btn-discard");
+const budgetMeter  = document.getElementById("budget-meter");
+const budgetFill   = document.getElementById("budget-fill");
+
+const BUDGET_FRACTION = 0.02;
+const MEMO_MAX_CHARS = 1024;
+let maxBudget = BUDGET_FRACTION * WIDTH * HEIGHT;
+let usedBudget = 0;
+
+function segmentArea(seg) {
+  const r = Math.max(seg.size, 1);
+  const dx = seg.x2 - seg.x1;
+  const dy = seg.y2 - seg.y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  return len * r * 2 + Math.PI * r * r;
+}
+
+function currentMemoLength() {
+  const strokes = pendingStrokes.map(s => [s.x1, s.y1, s.x2, s.y2, s.size, s.species]);
+  return JSON.stringify({ app: "falling-sands", type: "draw", s: strokes }).length;
+}
+
+function budgetRemaining() {
+  const areaRemaining = Math.max(0, 1 - usedBudget / maxBudget);
+  const memoRemaining = Math.max(0, 1 - currentMemoLength() / MEMO_MAX_CHARS);
+  return Math.min(areaRemaining, memoRemaining);
+}
+
+function budgetExhausted() {
+  return usedBudget >= maxBudget || currentMemoLength() >= MEMO_MAX_CHARS;
+}
+
+function wouldExceedBudget(seg) {
+  const area = segmentArea(seg);
+  if (usedBudget + area > maxBudget) return true;
+  const estExtra = JSON.stringify([seg.x1, seg.y1, seg.x2, seg.y2, seg.size, seg.species]).length + 1;
+  if (currentMemoLength() + estExtra > MEMO_MAX_CHARS) return true;
+  return false;
+}
+
+function refreshBudget() {
+  const remaining = budgetRemaining();
+  budgetFill.style.width = (remaining * 100) + "%";
+  if (remaining > 0.4) budgetFill.style.background = "#5dd39e";
+  else if (remaining > 0.15) budgetFill.style.background = "#f0c040";
+  else budgetFill.style.background = "#ff6b6b";
+}
+
+const SIMPLIFY_TOLERANCE = 0.8;
+
+function perpendicularDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+  return Math.abs(dy * px - dx * py + bx * ay - by * ax) / Math.sqrt(lenSq);
+}
+
+function simplifyDragSegments(startIdx, endIdx) {
+  if (endIdx - startIdx < 2) return;
+  const segs = pendingStrokes.slice(startIdx, endIdx);
+  const pts = [{ x: segs[0].x1, y: segs[0].y1 }];
+  for (const s of segs) pts.push({ x: s.x2, y: s.y2 });
+  const size = segs[0].size;
+  const species = segs[0].species;
+  const merged = [];
+  let anchor = 0;
+  while (anchor < pts.length - 1) {
+    let farthest = anchor + 1;
+    for (let cand = anchor + 2; cand < pts.length; cand++) {
+      let ok = true;
+      for (let mid = anchor + 1; mid < cand; mid++) {
+        const d = perpendicularDist(pts[mid].x, pts[mid].y, pts[anchor].x, pts[anchor].y, pts[cand].x, pts[cand].y);
+        if (d > SIMPLIFY_TOLERANCE) { ok = false; break; }
+      }
+      if (ok) farthest = cand; else break;
+    }
+    const seg = { x1: pts[anchor].x, y1: pts[anchor].y, x2: pts[farthest].x, y2: pts[farthest].y, size, species };
+    seg.area = segmentArea(seg);
+    merged.push(seg);
+    anchor = farthest;
+  }
+  pendingStrokes.splice(startIdx, endIdx - startIdx, ...merged);
+  usedBudget = 0;
+  for (const s of pendingStrokes) usedBudget += s.area || segmentArea(s);
+  redrawOverlay();
+  refreshFabs();
+}
+
+function drawOverlaySegment(seg) {
+  const d = Math.max(seg.size, 2);
+  if (seg.species === 0) {
+    overlayCtx.strokeStyle = "rgba(255,100,100,0.7)";
+    overlayCtx.lineWidth = d;
+    overlayCtx.lineCap = "round";
+    overlayCtx.setLineDash([3, 3]);
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(seg.x1, seg.y1);
+    overlayCtx.lineTo(seg.x2, seg.y2);
+    overlayCtx.stroke();
+    overlayCtx.setLineDash([]);
+    return;
+  }
+  const sp = speciesById[seg.species];
+  const color = sp ? sp.color : "#fff";
+  overlayCtx.strokeStyle = color;
+  overlayCtx.lineWidth = d;
+  overlayCtx.lineCap = "round";
+  overlayCtx.globalAlpha = 0.55;
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(seg.x1, seg.y1);
+  overlayCtx.lineTo(seg.x2, seg.y2);
+  overlayCtx.stroke();
+  overlayCtx.globalAlpha = 1.0;
+  overlayCtx.strokeStyle = "rgba(255,255,255,0.45)";
+  overlayCtx.lineWidth = d + 1;
+  overlayCtx.lineCap = "round";
+  overlayCtx.globalAlpha = 0.3;
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(seg.x1, seg.y1);
+  overlayCtx.lineTo(seg.x2, seg.y2);
+  overlayCtx.stroke();
+  overlayCtx.globalAlpha = 1.0;
+}
+
+redrawOverlay = function() {
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  for (const s of sentStrokes) drawOverlaySegment(s);
+  for (const s of pendingStrokes) drawOverlaySegment(s);
+};
+
+// Fab-bar holds both the send/discard buttons and the in-flight progress
+// bar (#send-progress). Keep it visible while any of those need to show:
+// - pendingStrokes drawn but not yet sent → show send/discard
+// - a send is in flight → show "Sending..." progress
+// - the apply countdown is still running → show "Applying in Ns"
+// - the "Confirmed!" flash is up (progress bar still un-hidden)
+// Single source of truth for button visibility too: ✕/✓ act on pending
+// strokes, so hide them whenever a send is in flight, the apply countdown
+// is running, or the progress bar is otherwise on screen — otherwise the
+// buttons pop back in alongside "Applying in Ns" and read as stuck.
+// Last-known fab-bar state signature. refreshFabs runs on every paint
+// move, but the fab-bar's contents only change at coarse-grained state
+// transitions (start/end of a drawing session, send started, progress →
+// countdown → confirmed). Re-running fitToolbar (which forces a layout
+// read) on every paint move would be wasteful; gate it on the signature
+// so we only refit when something actually changed.
+//
+// Note: the fab-bar's outer slot is always rendered (CSS reserves a
+// fixed width for it) — we only toggle its children, so the toolbar
+// layout doesn't snap when the user starts/finishes drawing.
+let _lastFabSig = "";
+function refreshFabs() {
+  const inflight = sending || _applyRaf !== null;
+  const progressVisible = sendProgressEl && !sendProgressEl.classList.contains("hide");
+  const showButtons = pendingStrokes.length > 0 && !inflight && !progressVisible;
+  btnSend.style.display = showButtons ? "" : "none";
+  btnDiscard.style.display = showButtons ? "" : "none";
+  // Budget meter is only meaningful while the user is building up strokes;
+  // hide it alongside ✕/✓ so the "Sending..." / "Applying in Ns" UI is
+  // just the progress bar.
+  if (budgetMeter) budgetMeter.style.display = showButtons ? "" : "none";
+  refreshBudget();
+
+  const sig = `${showButtons}|${progressVisible}`;
+  if (sig !== _lastFabSig) {
+    _lastFabSig = sig;
+    if (typeof fitToolbar === "function") fitToolbar();
+  }
+}
+
+function eventToSim(e) {
+  const rect = overlayCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left) / rect.width * WIDTH);
+  const y = Math.floor((e.clientY - rect.top) / rect.height * HEIGHT);
+  if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return null;
+  return { x, y };
+}
+
+let liveSimplifyTimer = null;
+function liveSimplify() {
+  liveSimplifyTimer = null;
+  if (!painting) return;
+  const n = pendingStrokes.length;
+  if (n - dragStartIdx < 4) return;
+  simplifyDragSegments(dragStartIdx, n);
+}
+
+function localPaint(e) {
+  if (budgetExhausted()) return;
+  const pos = eventToSim(e);
+  if (!pos) return;
+  const from = lastPaintPos || pos;
+  const seg = { x1: from.x, y1: from.y, x2: pos.x, y2: pos.y, size: brushSize, species: selectedSpecies };
+  if (wouldExceedBudget(seg)) return;
+  seg.area = segmentArea(seg);
+  usedBudget += seg.area;
+  pendingStrokes.push(seg);
+  drawOverlaySegment(seg);
+  lastPaintPos = pos;
+  refreshFabs();
+  if (!liveSimplifyTimer) liveSimplifyTimer = setTimeout(liveSimplify, 120);
+}
+
+// ── Sending state ────────────────────────────────────────────────────────────
+let sending = false;
+const sendProgressEl = document.getElementById("send-progress");
+const TX_PROGRESS_EXPECTED_S = 60;
+const TX_PROGRESS_WARN_S    = 120;
+const TX_PROGRESS_ERR_S     = 180;
+let _txRaf = null;
+let _txStart = 0;
+
+function txProgressPct(s) {
+  if (s <= TX_PROGRESS_EXPECTED_S) { const t = s / TX_PROGRESS_EXPECTED_S; return 95 * (1 - Math.pow(1 - t, 3)); }
+  return 95 + 5 * (1 - Math.exp(-(s - TX_PROGRESS_EXPECTED_S) / 120));
+}
+
+function txProgressUpdate(pct, s) {
+  if (!sendProgressEl) return;
+  const fill = sendProgressEl.querySelector(".tx-fill");
+  const label = sendProgressEl.querySelector(".tx-label");
+  if (fill) {
+    fill.style.width = pct + "%";
+    if (s >= TX_PROGRESS_ERR_S) fill.className = "tx-fill err";
+    else if (s >= TX_PROGRESS_WARN_S) fill.className = "tx-fill warn";
+    else fill.className = "tx-fill";
+  }
+  if (label) {
+    if (s >= TX_PROGRESS_ERR_S) { label.textContent = "Taking longer than it should; check Discord"; label.className = "tx-label err"; }
+    else if (s >= TX_PROGRESS_WARN_S) { label.textContent = "Taking longer than expected"; label.className = "tx-label warn"; }
+    else { label.textContent = "Sending..."; label.className = "tx-label"; }
+  }
+}
+
+function startTxProgress() {
+  stopTxProgress();
+  _txStart = performance.now();
+  const fill = sendProgressEl && sendProgressEl.querySelector(".tx-fill");
+  const label = sendProgressEl && sendProgressEl.querySelector(".tx-label");
+  if (fill) { fill.style.width = "0%"; fill.className = "tx-fill"; }
+  if (label) { label.textContent = "Sending..."; label.className = "tx-label"; }
+  function tick() { const s = (performance.now() - _txStart) / 1000; txProgressUpdate(txProgressPct(s), s); _txRaf = requestAnimationFrame(tick); }
+  _txRaf = requestAnimationFrame(tick);
+}
+function completeTxProgress() {
+  stopTxProgress();
+  if (!sendProgressEl) return;
+  // Once the WS broadcast confirms the tx, skip straight to the apply
+  // countdown — reaching this phase IS the on-chain confirmation. The
+  // countdown is driven by `pendingApplyAtMs` (captured the moment the WS
+  // matched our send), NOT `sentStrokesApplyTick`, because the latter is
+  // also used by the rewind path in addPendingTx and gets nulled out in
+  // `simTick >= sentStrokesApplyTick` racy cases. If pendingApplyAtMs is
+  // missing entirely (failure-path race) just fade with a brief
+  // "Confirmed!" as before.
+  const nowMs = Date.now();
+  const remainMs = pendingApplyAtMs != null ? pendingApplyAtMs - nowMs : null;
+  console.log(`[sands-send] completeTxProgress: pendingApplyAtMs=${pendingApplyAtMs} sentStrokesApplyTick=${sentStrokesApplyTick} now=${nowMs} remain=${remainMs}ms`);
+  if (pendingApplyAtMs !== null && remainMs > 200) {
+    startApplyCountdown();
+  } else {
+    if (pendingApplyAtMs === null) {
+      console.warn(`[sands-send] no pendingApplyAtMs at confirmation — falling back to Confirmed flash`);
+    } else {
+      console.log(`[sands-send] applyAtMs already passed (remain=${remainMs}ms) — flashing Confirmed`);
+    }
+    pendingApplyAtMs = null;
+    const fill = sendProgressEl.querySelector(".tx-fill");
+    const label = sendProgressEl.querySelector(".tx-label");
+    if (fill) { fill.className = "tx-fill ok"; fill.style.width = "100%"; }
+    if (label) { label.textContent = "Confirmed!"; label.className = "tx-label"; }
+    setTimeout(() => {
+      sendProgressEl.classList.add("hide");
+      refreshFabs();
+    }, 1200);
+  }
+}
+function stopTxProgress() { if (_txRaf) { cancelAnimationFrame(_txRaf); _txRaf = null; } }
+
+// Apply countdown: drains the bar from 100% → 0% over the time between now
+// and `pendingApplyAtMs` (= wall-clock equivalent of server's canonical
+// drawTick). Reads from its own variable rather than sentStrokesApplyTick
+// because the rewind path nulls the latter the moment a late tx is folded
+// in, killing the countdown UI.
+let _applyRaf = null;
+function startApplyCountdown() {
+  stopApplyCountdown();
+  if (!sendProgressEl || pendingApplyAtMs === null) return;
+  const applyAtMs = pendingApplyAtMs;
+  const startMs = Date.now();
+  const totalMs = Math.max(1, applyAtMs - startMs);
+  console.log(`[sands-send] countdown: applyAt=+${(totalMs / 1000).toFixed(1)}s (now=${new Date(startMs).toISOString()}, applyAt=${new Date(applyAtMs).toISOString()})`);
+  const fill = sendProgressEl.querySelector(".tx-fill");
+  const label = sendProgressEl.querySelector(".tx-label");
+  if (sendProgressEl.classList.contains("hide")) sendProgressEl.classList.remove("hide");
+  function tick() {
+    const remain = applyAtMs - Date.now();
+    if (remain <= 0) {
+      if (fill) { fill.className = "tx-fill ok"; fill.style.width = "0%"; }
+      if (label) { label.textContent = "Drawn!"; label.className = "tx-label"; }
+      _applyRaf = null;
+      pendingApplyAtMs = null;
+      setTimeout(() => {
+        sendProgressEl.classList.add("hide");
+        refreshFabs();
+      }, 600);
+      return;
+    }
+    const pct = Math.max(0, Math.min(100, (remain / totalMs) * 100));
+    if (fill) { fill.className = "tx-fill ok"; fill.style.width = pct + "%"; }
+    const seconds = Math.max(1, Math.ceil(remain / 1000));
+    if (label) { label.textContent = `Applying in ${seconds}s`; label.className = "tx-label"; }
+    _applyRaf = requestAnimationFrame(tick);
+  }
+  tick();
+}
+function stopApplyCountdown() {
+  if (_applyRaf) { cancelAnimationFrame(_applyRaf); _applyRaf = null; }
+}
+
+function setSending(v, txSucceeded) {
+  sending = !!v;
+  if (v) {
+    stopApplyCountdown();
+    pendingApplyAtMs = null;
+    if (sendProgressEl) sendProgressEl.classList.remove("hide");
+    startTxProgress();
+  } else if (txSucceeded) {
+    completeTxProgress();
+  } else {
+    stopTxProgress();
+    stopApplyCountdown();
+    pendingApplyAtMs = null;
+    if (sendProgressEl) sendProgressEl.classList.add("hide");
+  }
+  // Single place that derives fab-bar + ✕/✓ visibility from the current
+  // state (sending flag, _applyRaf, pendingStrokes, progress bar). Every
+  // state transition goes through setSending or refreshFabs directly, so
+  // we don't need to mirror the rules at each exit point.
+  refreshFabs();
+  overlayCanvas.style.pointerEvents = v ? "none" : "auto";
+}
+
+// We pass waitForInclusion: false to the bridge so it skips its own
+// inclusion polling. The server's chain poller (createAppStateCache) is
+// already polling the explorer for this dapp's pubkey and broadcasting
+// matches over WS, so two pollers chasing the same answer is wasteful and
+// also created a race: the WS broadcast can arrive before the bridge
+// poll finishes, and if matcher state isn't armed by then the overlay
+// never clears. Single source of truth = the WS broadcast.
+const WS_CONFIRMATION_TIMEOUT_MS = 90_000;
+
+async function awaitWsBroadcastMatch(timeoutMs) {
+  const startTs = Date.now();
+  while (sentMemoJson !== null && Date.now() - startTs < timeoutMs) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (sentMemoJson !== null) {
+    throw new Error("WS confirmation timeout");
+  }
+}
+
+btnSend.addEventListener("click", async () => {
+  if (sending || !pendingStrokes.length) return;
+
+  const strokes = pendingStrokes.map(s => [s.x1, s.y1, s.x2, s.y2, s.size, s.species]);
+  const memo = JSON.stringify({ app: "falling-sands", type: "draw", s: strokes });
+
+  // Arm the WS matcher before doing anything async so any incoming "tx"
+  // broadcast can be claimed regardless of which channel reports first.
+  // Visually identical: redrawOverlay paints both sentStrokes and
+  // pendingStrokes in red, so swapping arrays is a no-op for the user.
+  const heldStrokes = pendingStrokes;
+  const heldBudget = usedBudget;
+  sentStrokes = heldStrokes;
+  sentMemoJson = memo;
+  sentStrokesApplyTick = null;
+  sentStrokesDeadline = Date.now() + WS_CONFIRMATION_TIMEOUT_MS;
+  pendingStrokes = [];
+  usedBudget = 0;
+  redrawOverlay();
+  refreshFabs();
+
+  try {
+    setSending(true);
+    await sendTransaction(APP_PUBKEY, 1, memo, {
+      ...TX_SEND_OPTS,
+      waitForInclusion: false,
+      confirmTitle: "Save your drawing",
+      confirmSubtitle: "Record your strokes on-chain.",
+    });
+    console.log(`[sands-send] queued (memo bytes=${memo.length}) — waiting for WS broadcast`);
+    await awaitWsBroadcastMatch(WS_CONFIRMATION_TIMEOUT_MS);
+    console.log(`[sands-send] WS broadcast matched — confirmed on-chain`);
+    setSending(false, true);
+  } catch (e) {
+    const isTimeout = e && /timeout/i.test(e.message || "");
+    if (isTimeout) {
+      // The tx was queued but we never saw a WS broadcast for it. Could be
+      // a server-side polling lag, a chain reorg, or a genuine failure.
+      // Leave the overlay in place (the 60s deadline already cleared it
+      // by now via simTick30Hz) and let the user retry.
+      console.warn("[sands-send] WS broadcast timeout — tx may still land later");
+      showError("Confirmation taking longer than expected — your drawing may still appear shortly.");
+    } else {
+      // Send was rejected before queuing (user cancelled native dialog,
+      // network error, etc.). Restore the strokes so the user can retry.
+      pendingStrokes = heldStrokes;
+      usedBudget = heldBudget;
+      sentStrokes = [];
+      sentMemoJson = null;
+      sentStrokesApplyTick = null;
+      redrawOverlay();
+      refreshFabs();
+      console.error("sendTransaction error:", e);
+      showError("Send failed: " + (e.message || e));
+    }
+    setSending(false, false);
+  }
+});
+
+btnDiscard.addEventListener("click", () => {
+  pendingStrokes = [];
+  usedBudget = 0;
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  refreshFabs();
+});
+
+function startPaint(e) {
+  painting = true;
+  lastPaintPos = null;
+  dragStartIdx = pendingStrokes.length;
+  localPaint(e);
+}
+function movePaint(e) { if (painting) localPaint(e); }
+function endPaint() {
+  if (painting) {
+    if (liveSimplifyTimer) { clearTimeout(liveSimplifyTimer); liveSimplifyTimer = null; }
+    simplifyDragSegments(dragStartIdx, pendingStrokes.length);
+  }
+  painting = false;
+  lastPaintPos = null;
+}
+
+overlayCanvas.addEventListener("mousedown", startPaint);
+overlayCanvas.addEventListener("mousemove", movePaint);
+window.addEventListener("mouseup", endPaint);
+overlayCanvas.addEventListener("touchstart", (e) => { e.preventDefault(); for (const touch of e.touches) startPaint(touch); }, { passive: false });
+overlayCanvas.addEventListener("touchmove", (e) => { e.preventDefault(); if (painting) for (const touch of e.touches) movePaint(touch); }, { passive: false });
+window.addEventListener("touchend", endPaint);
+
+// ── Info overlay toggle ─────────────────────────────────────────────────────
+(function () {
+  const btn = document.getElementById("info-btn");
+  const overlay = document.getElementById("info-overlay");
+  const content = document.getElementById("info-content");
+  if (!btn || !overlay) return;
+  btn.addEventListener("click", () => overlay.classList.add("open"));
+  overlay.addEventListener("click", (e) => {
+    if (!content.contains(e.target)) {
+      overlay.classList.remove("open");
+      try { localStorage.setItem("sands:introDismissed", "1"); } catch (_) {}
+    }
+  });
+})();
+
+// ── Admin reset ─────────────────────────────────────────────────────────────
+//
+// `adminPubkey` is set from the server's WS init/resync payload (see
+// engine.js). We cache the current user's address the first time we can
+// resolve it so `maybeShowAdminUI` can run synchronously on subsequent
+// evaluations (e.g. when a later resync re-confirms admin state). The
+// reset button submits a tiny `{ app: "falling-sands", type: "reset" }`
+// memo to APP_PUBKEY — the server's engine is the single enforcement
+// point (it validates `tx.from === adminPubkey` before applying and
+// replaying), so we don't try to forge any client-side security here.
+// The UI-level gate is purely a cosmetic filter so non-admins don't see
+// a button that would be rejected server-side anyway.
+
+let _myAddressCache = null;
+let _myAddressLookup = null;
+
+async function getMyAddressCached() {
+  if (_myAddressCache) return _myAddressCache;
+  if (_myAddressLookup) return _myAddressLookup;
+  _myAddressLookup = (async () => {
+    try {
+      if (typeof getNodeAddress !== "function") return null;
+      const addr = await getNodeAddress();
+      _myAddressCache = addr || null;
+      return _myAddressCache;
+    } catch (e) {
+      console.warn("[admin] getNodeAddress failed:", e);
+      return null;
+    } finally {
+      _myAddressLookup = null;
+    }
+  })();
+  return _myAddressLookup;
+}
+
+const adminSectionEl = document.getElementById("admin-section");
+const adminResetBtn = document.getElementById("admin-reset-btn");
+const adminResetStatus = document.getElementById("admin-reset-status");
+
+async function maybeShowAdminUI() {
+  if (!adminSectionEl) return;
+  const myAddr = await getMyAddressCached();
+  const isAdmin = !!(adminPubkey && myAddr && myAddr === adminPubkey);
+  adminSectionEl.classList.toggle("hide", !isAdmin);
+}
+
+// Kick off an initial evaluation — when the bridge is still booting this
+// just primes the cache without flashing the section. The real show/hide
+// happens when WS init arrives and calls maybeShowAdminUI().
+maybeShowAdminUI();
+
+function setAdminStatus(msg, cls) {
+  if (!adminResetStatus) return;
+  adminResetStatus.textContent = msg || "";
+  adminResetStatus.className = cls || "";
+}
+
+// DOM-based confirm dialog. window.confirm() is unreliable inside the
+// Flutter WebView (the WKUIDelegate / WebChromeClient may swallow the
+// call and return false), so the admin reset path uses this overlay
+// instead. Returns a Promise<boolean>.
+function showAdminConfirm() {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("admin-confirm-overlay");
+    const okBtn = document.getElementById("admin-confirm-ok");
+    const cancelBtn = document.getElementById("admin-confirm-cancel");
+    if (!overlay || !okBtn || !cancelBtn) {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      overlay.classList.remove("open");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKey);
+      resolve(val);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    const onBackdrop = (e) => { if (e.target === overlay) finish(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(false);
+      else if (e.key === "Enter") finish(true);
+    };
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    overlay.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKey);
+    overlay.classList.add("open");
+    // Defer focus so the tap that opened the dialog doesn't immediately
+    // trigger the OK button on touch devices.
+    setTimeout(() => { try { cancelBtn.focus(); } catch (_) {} }, 0);
+  });
+}
+
+if (adminResetBtn) {
+  adminResetBtn.addEventListener("click", async () => {
+    if (adminResetBtn.disabled) return;
+    const confirmed = await showAdminConfirm();
+    if (!confirmed) return;
+
+    adminResetBtn.disabled = true;
+    setAdminStatus("Sending reset…", "");
+    try {
+      const memo = JSON.stringify({ app: "falling-sands", type: "reset" });
+      await sendTransaction(APP_PUBKEY, 1, memo, {
+        ...TX_SEND_OPTS,
+        // Bridge's inclusion poll is wasteful here — the server's WS
+        // resync broadcast is our confirmation signal: the sim visibly
+        // snaps back to the seeded state on every client as soon as the
+        // engine applies the reset.
+        waitForInclusion: false,
+        confirmTitle: "Reset canvas for everyone",
+        confirmSubtitle: "Wipes all drawings back to the seeded default. This is recorded on-chain.",
+      });
+      setAdminStatus("Reset queued — canvas will refresh once it's included on-chain.", "ok");
+    } catch (e) {
+      console.error("[admin] reset failed:", e);
+      setAdminStatus("Reset failed: " + (e && e.message ? e.message : e), "err");
+    } finally {
+      adminResetBtn.disabled = false;
+    }
+  });
+}
+</script>
+</body>
+</html>

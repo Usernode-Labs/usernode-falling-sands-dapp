@@ -1,0 +1,34 @@
+{
+  "secrets": [
+    {
+      "key": "APP_PUBKEY",
+      "description": "Falling-sands canvas address. Users send drawing transactions here. Reuse the canonical falling-sands pubkey so this deploy converges on the same simulation state from chain history as the canonical examples deploy.",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "key": "ADMIN_PUBKEY",
+      "description": "Optional admin pubkey - permitted to issue {\"app\":\"falling-sands\",\"type\":\"reset\"} memos. Any reset from a different sender is silently ignored. Unset means no admin (the client hides reset UI).",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "key": "NODE_RPC_URL",
+      "description": "Sidecar usernode RPC endpoint. Defaults to the in-network node service.",
+      "required": false,
+      "default": "http://usernode-node:3000"
+    },
+    {
+      "key": "USE_NODE_STREAM",
+      "description": "Set to 1 to bypass the explorer's 5-60s indexing lag and use the node's direct SSE stream + catch-up poll for live transactions. Requires the sidecar to expose /transactions/by_recipient + /transactions/stream. Defaults to 1.",
+      "required": false,
+      "default": "1"
+    },
+    {
+      "key": "SNAPSHOT_DIR",
+      "description": "On-disk snapshot directory the engine reads/writes. The snapshot-store hydrates it from Postgres on boot and mirrors writes back. Defaults to /app/data inside the container.",
+      "required": false,
+      "default": "/app/data"
+    }
+  ]
+}

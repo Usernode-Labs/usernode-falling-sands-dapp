@@ -1,0 +1,16 @@
+{
+  "name": "usernode-falling-sands-dapp",
+  "version": "1.0.0",
+  "description": "Collaborative on-chain pixel sandbox - standalone deploy for Usernode social-vibecoding",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js --local-dev",
+    "build-wasm": "cd sandspiel && wasm-pack build crate --target nodejs"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.13.1",
+    "ws": "^8.16.0"
+  }
+}
