@@ -243,6 +243,12 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     nodeRpcUrl: USE_NODE_STREAM ? NODE_RPC_URL : null,
   });
   engineCache.start();
+
+  // Register with the status page now that the cache exists. We do this
+  // here (rather than from a setInterval poller below) because cold-boot
+  // replay can take many minutes on a long chain history, well beyond
+  // any reasonable polling cap. Registering inline removes the race.
+  dappServerStatus.registerCache(engineCache);
 })().catch((e) => {
   console.error("[server] init failed:", e);
   process.exit(1);
@@ -354,22 +360,11 @@ const dappServerStatus = createDappServerStatus({
   getBuildVersion,
 });
 dappServerStatus.registerCache(usernamesCache);
-{
-  // engineCache is built inside the async init() above; poll for it
-  // and register once it exists (cap at 60s — partial status beats
-  // spinning forever).
-  const t0 = Date.now();
-  const poll = setInterval(() => {
-    if (engineCache) {
-      dappServerStatus.registerCache(engineCache);
-      clearInterval(poll);
-    } else if (Date.now() - t0 > 60000) {
-      clearInterval(poll);
-      console.warn("[status] sands cache never came up — leaving unregistered");
-    }
-  }, 500);
-  if (poll.unref) poll.unref();
-}
+// engineCache is registered from inside the async init() block above
+// (immediately after engineCache.start()). It can't be registered here
+// at module load because the engine's cold-boot replay must finish
+// first, and that takes longer than any sane polling cap on long chain
+// histories.
 
 app.use((req, res, next) => {
   if (dappServerStatus.handleRequest(req, res, req.path)) return;
