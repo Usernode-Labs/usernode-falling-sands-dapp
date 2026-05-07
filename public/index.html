@@ -2061,6 +2061,9 @@ let maxBudget = BUDGET_FRACTION * WIDTH * HEIGHT;
 let usedBudget = 0;
 
 function segmentArea(seg) {
+  // Eraser (species 0) bypasses the per-stroke area budget so users can
+  // freely clean up the canvas. The 1024-byte memo cap still applies.
+  if (seg.species === 0) return 0;
   const r = Math.max(seg.size, 1);
   const dx = seg.x2 - seg.x1;
   const dy = seg.y2 - seg.y1;
@@ -2073,26 +2076,30 @@ function currentMemoLength() {
   return JSON.stringify({ app: "falling-sands", type: "draw", s: strokes }).length;
 }
 
-function budgetRemaining() {
-  const areaRemaining = Math.max(0, 1 - usedBudget / maxBudget);
+function budgetRemaining(species) {
   const memoRemaining = Math.max(0, 1 - currentMemoLength() / MEMO_MAX_CHARS);
+  if (species === 0) return memoRemaining;
+  const areaRemaining = Math.max(0, 1 - usedBudget / maxBudget);
   return Math.min(areaRemaining, memoRemaining);
 }
 
-function budgetExhausted() {
-  return usedBudget >= maxBudget || currentMemoLength() >= MEMO_MAX_CHARS;
+function budgetExhausted(species) {
+  if (currentMemoLength() >= MEMO_MAX_CHARS) return true;
+  if (species === 0) return false;
+  return usedBudget >= maxBudget;
 }
 
 function wouldExceedBudget(seg) {
-  const area = segmentArea(seg);
-  if (usedBudget + area > maxBudget) return true;
   const estExtra = JSON.stringify([seg.x1, seg.y1, seg.x2, seg.y2, seg.size, seg.species]).length + 1;
   if (currentMemoLength() + estExtra > MEMO_MAX_CHARS) return true;
+  if (seg.species === 0) return false;
+  const area = segmentArea(seg);
+  if (usedBudget + area > maxBudget) return true;
   return false;
 }
 
 function refreshBudget() {
-  const remaining = budgetRemaining();
+  const remaining = budgetRemaining(selectedSpecies);
   budgetFill.style.width = (remaining * 100) + "%";
   if (remaining > 0.4) budgetFill.style.background = "#5dd39e";
   else if (remaining > 0.15) budgetFill.style.background = "#f0c040";
@@ -2239,7 +2246,7 @@ function liveSimplify() {
 }
 
 function localPaint(e) {
-  if (budgetExhausted()) return;
+  if (budgetExhausted(selectedSpecies)) return;
   const pos = eventToSim(e);
   if (!pos) return;
   const from = lastPaintPos || pos;
