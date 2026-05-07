@@ -2440,7 +2440,7 @@ btnSend.addEventListener("click", async () => {
       ...TX_SEND_OPTS,
       waitForInclusion: false,
       confirmTitle: "Save your drawing",
-      confirmSubtitle: "Record your strokes on-chain.",
+      confirmSubtitle: "Falling Sands — Record your strokes on-chain.",
     });
     console.log(`[sands-send] queued (memo bytes=${memo.length}) — waiting for WS broadcast`);
     await awaitWsBroadcastMatch(WS_CONFIRMATION_TIMEOUT_MS);
@@ -2634,7 +2634,7 @@ if (adminResetBtn) {
         // engine applies the reset.
         waitForInclusion: false,
         confirmTitle: "Reset canvas for everyone",
-        confirmSubtitle: "Wipes all drawings back to the seeded default. This is recorded on-chain.",
+        confirmSubtitle: "Falling Sands — Wipes all drawings back to the seeded default. This is recorded on-chain.",
       });
       setAdminStatus("Reset queued — canvas will refresh once it's included on-chain.", "ok");
     } catch (e) {
