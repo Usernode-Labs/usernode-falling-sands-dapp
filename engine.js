@@ -137,6 +137,11 @@ function createEngine(opts) {
       for (const pt of pts) {
         const x = Math.max(0, Math.min(WIDTH - 1, pt.x | 0));
         const y = Math.max(0, Math.min(HEIGHT - 1, pt.y | 0));
+        // Erase first so the new material overrides anything already there.
+        // The WASM `paint` only writes a cell when it's Empty or when the
+        // incoming species is Empty; this two-pass pattern reliably replaces
+        // existing matter. No-op for eraser strokes (species === 0).
+        if (species !== 0) universe.paint(x, y, size, 0);
         universe.paint(x, y, size, species);
       }
     }
