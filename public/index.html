@@ -869,6 +869,7 @@ const SPECIES = [
   { id: 23, name: "Oil Well", color: "#1a1a2a", source: true },
   { id: 24, name: "Gas Src", color: "#888888", source: true },
   { id: 25, name: "Acid Src", color: "#5e8500", source: true },
+  { id: 26, name: "Black Hole", color: "#0a0518", source: true },
 ];
 let sourcesEnabled = false;
 
@@ -1269,6 +1270,7 @@ void main() {
   else if (type == 23) { hue = 0.7; saturation = 0.15; lightness = 0.15 + d.g * 0.1; }
   else if (type == 24) { hue = 0.0; saturation = 0.0; lightness = 0.45 + d.g * 0.1; }
   else if (type == 25) { hue = 0.18; saturation = 0.7; lightness = 0.4 + d.g * 0.1; }
+  else if (type == 26) { hue = 0.75; saturation = 0.5; lightness = 0.04 + d.g * 0.02; }
 
   lightness *= (0.975 + snoise2(floor(uv * resolution / dpi)) * 0.025);
   gl_FragColor = vec4(hsv2rgb(vec3(hue, saturation, lightness)), a);
