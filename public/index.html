@@ -1550,7 +1550,7 @@ function simTick30Hz() {
   // FPS counter
   const now = performance.now();
   if (now - lastFpsTime >= 1000) {
-    fpsEl.textContent = `${ticksThisSecond} tps`;
+    fpsEl.textContent = `${ticksThisSecond} fps`;
     if (canOverwriteStatus()) {
       statusEl.className = "ok";
       statusEl.textContent = "Running locally";
