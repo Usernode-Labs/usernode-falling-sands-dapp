@@ -230,6 +230,20 @@
       color: #8896ab;
       text-align: center;
     }
+    .picker-section-header {
+      grid-column: 1 / -1;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #6f7e94;
+      padding: 6px 4px 2px;
+    }
+    .picker-section-header.with-divider {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      margin-top: 6px;
+      padding-top: 12px;
+    }
 
     /* ── Canvas ───────────────────────────────────── */
     #canvas-wrap {
@@ -1024,9 +1038,8 @@ function selectSpecies(id) {
 
 function rebuildPicker() {
   pickerGrid.innerHTML = "";
-  SPECIES.forEach(sp => {
-    if (sp.id === 0) return;
-    if (sp.source && !sourcesEnabled) return;
+
+  const appendItem = (sp) => {
     const item = document.createElement("div");
     item.className = "picker-item";
     item.innerHTML =
@@ -1034,7 +1047,25 @@ function rebuildPicker() {
       `<div class="picker-label">${sp.name}</div>`;
     item.addEventListener("click", () => { selectSpecies(sp.id); closePicker(); });
     pickerGrid.appendChild(item);
-  });
+  };
+  const appendHeader = (label, withDivider) => {
+    const h = document.createElement("div");
+    h.className = "picker-section-header" + (withDivider ? " with-divider" : "");
+    h.textContent = label;
+    pickerGrid.appendChild(h);
+  };
+
+  const elements = SPECIES.filter(s => s.id !== 0 && !s.source);
+  const sources = sourcesEnabled ? SPECIES.filter(s => s.source) : [];
+
+  if (elements.length) {
+    appendHeader("Elements", false);
+    elements.forEach(appendItem);
+  }
+  if (sources.length) {
+    appendHeader("Sources", elements.length > 0);
+    sources.forEach(appendItem);
+  }
 }
 rebuildPicker();
 
