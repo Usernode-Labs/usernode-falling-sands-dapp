@@ -606,7 +606,14 @@
   </div>
 </div>
 
-<script src="/usernode-bridge.js"></script>
+<!-- usernode-bridge is centralized in Usernode Social Vibecoding at
+     social-vibecoding/public/usernode-bridge/v1/bridge.js. All dapps in
+     the fleet load this same URL — one canonical copy, fleet-wide fix
+     on a single SV redeploy. SV serves it with
+     Cache-Control: no-cache, must-revalidate so each page load
+     revalidates via 304. Major-version bumps move to /v2/, segregating
+     cache state naturally. -->
+<script src="https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js"></script>
 <script src="/usernode-usernames.js"></script>
 <script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>

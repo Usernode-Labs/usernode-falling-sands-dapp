@@ -46,7 +46,6 @@ falling-sands/
   sandspiel/             Submodule (HTTPS, pinned). Rust+WASM source.
   public/
     index.html
-    usernode-bridge.js
     usernode-usernames.js
     usernode-loading.js
   tests/                 Vendored determinism / multi-server tests.

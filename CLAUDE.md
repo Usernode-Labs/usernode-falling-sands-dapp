@@ -45,9 +45,12 @@ hosted conventions win.
   `347caa64`). The `crate/` subdirectory is the Rust+WASM physics engine
   source; the Dockerfile compiles it via `wasm-pack`.
 - `public/` — Browser UI (single HTML file, plus the shared
-  `usernode-bridge.js`, `usernode-usernames.js`, `usernode-loading.js`).
-  The bridge and loader are shared infrastructure; do not fork them
-  per-app.
+  `usernode-usernames.js` and `usernode-loading.js`). The bridge is loaded
+  from `https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js` —
+  canonical source lives in the social-vibecoding repo at
+  `public/usernode-bridge/v1/bridge.js`. Never vendor it per-app; bridge
+  fixes ship from one SV redeploy, fleet-wide. The loader is still
+  shared infrastructure; do not fork it per-app.
 - `tests/` — Vendored determinism / multi-server / replay tests. Run
   with `node tests/<file>.js` once `pkg/` is built.
 
