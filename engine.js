@@ -78,6 +78,16 @@ function createEngine(opts) {
 
   const { Universe, Species, memory, prng } = require(wasmLoaderPath);
 
+  // Allowlist of species ids this build's WASM knows about. A draw memo
+  // carrying an id outside this set (a malformed memo, or one emitted by a
+  // peer running newer code during a staggered deploy) would otherwise be
+  // passed to the WASM `paint`, which marshals it into the Rust `Species`
+  // enum and throws on an unknown discriminant — aborting the whole replay.
+  // Skipping unknown ids keeps this node alive; it reconverges with the
+  // peer once both run the same WASM build. (Mirrors the client guard in
+  // public/index.html's applyDrawMemo.)
+  const KNOWN_SPECIES = new Set(Object.values(Species));
+
   const universe = Universe.new(WIDTH, HEIGHT);
 
   // Captured once so reseedUniverse() (the reset path) can reproduce the
@@ -132,6 +142,7 @@ function createEngine(opts) {
     for (const seg of memo.s) {
       if (!Array.isArray(seg) || seg.length < 6) continue;
       const species = seg[5] | 0;
+      if (!KNOWN_SPECIES.has(species)) continue;
       const size = Math.max(1, Math.min(20, seg[4] | 0));
       const pts = segmentToPoints(seg);
       for (const pt of pts) {

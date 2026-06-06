@@ -891,6 +891,11 @@ const SPECIES = [
   { id: 24, name: "Gas Src", color: "#888888", source: true },
   { id: 25, name: "Acid Src", color: "#5e8500", source: true },
   { id: 26, name: "Black Hole", color: "#0a0518", source: true },
+  { id: 27, name: "Snow",  color: "#eaf4ff" },
+  { id: 28, name: "Salt",  color: "#f2f0e6" },
+  { id: 29, name: "Steam", color: "#c7d2dd" },
+  { id: 30, name: "Glass", color: "#bfe6e0" },
+  { id: 31, name: "Mud",   color: "#6b4f2a" },
 ];
 let sourcesEnabled = false;
 
@@ -1309,6 +1314,11 @@ void main() {
   else if (type == 24) { hue = 0.0; saturation = 0.0; lightness = 0.45 + d.g * 0.1; }
   else if (type == 25) { hue = 0.18; saturation = 0.7; lightness = 0.4 + d.g * 0.1; }
   else if (type == 26) { hue = 0.75; saturation = 0.5; lightness = 0.04 + d.g * 0.02; }
+  else if (type == 27) { hue = 0.6; saturation = 0.05; lightness = 0.85 + d.g * 0.15; }
+  else if (type == 28) { hue = 0.1; saturation = 0.05; lightness = 0.82 + d.g * 0.1; }
+  else if (type == 29) { hue = 0.6; saturation = 0.1; lightness = 0.85; a = 0.6; }
+  else if (type == 30) { hue = 0.5; saturation = 0.15; lightness = 0.85; a = 0.55; }
+  else if (type == 31) { hue = 0.08; saturation = 0.5; lightness = 0.22 + d.g * 0.15; }
 
   lightness *= (0.975 + snoise2(floor(uv * resolution / dpi)) * 0.025);
   gl_FragColor = vec4(hsv2rgb(vec3(hue, saturation, lightness)), a);
@@ -1399,6 +1409,13 @@ function applyDrawMemo(memo) {
   for (const seg of memo.s) {
     if (!Array.isArray(seg) || seg.length < 6) continue;
     const species = seg[5] | 0;
+    // Allowlist guard: skip species ids this build doesn't know about.
+    // Passing an unknown id to the WASM `paint` (which marshals it into the
+    // Rust `Species` enum) would throw and abort the simulation. During a
+    // staggered deploy a peer running newer code may emit an id we don't
+    // have yet — skip those points rather than crash; we reconverge once
+    // both sides run the same WASM build. (See engine.js for the mirror.)
+    if (!(species in speciesById)) continue;
     const size = Math.max(1, Math.min(20, seg[4] | 0));
     const pts = segmentToPoints(seg);
     for (const pt of pts) {

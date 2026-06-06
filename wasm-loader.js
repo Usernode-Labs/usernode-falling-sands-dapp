@@ -133,6 +133,14 @@ const Species = Object.freeze({
   SandSource: 21,
   Torch: 22,
   OilWell: 23,
+  GasSource: 24,
+  AcidSource: 25,
+  BlackHole: 26,
+  Snow: 27,
+  Salt: 28,
+  Steam: 29,
+  Glass: 30,
+  Mud: 31,
 });
 
 // ── Thin wrapper around the raw WASM exports ────────────────────────────────
