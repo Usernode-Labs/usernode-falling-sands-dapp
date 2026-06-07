@@ -1242,6 +1242,13 @@ function panBy(dx, dy) { panX += dx; panY += dy; applyView(); }
 
 function fitView() { zoom = 1; panX = 0; panY = 0; applyView(); }
 
+// Double-click / double-tap: zoom in one step toward (ax, ay); once at
+// ZOOM_MAX, snap back to fit so the gesture toggles zoomed ⇄ fit.
+function zoomToggleAt(ax, ay) {
+  if (zoom >= ZOOM_MAX - 1e-6) fitView();
+  else zoomAt(zoom * ZOOM_STEP, ax, ay);
+}
+
 function sizeCanvas() {
   const wrap = canvasWrap;
   const maxW = wrap.clientWidth - 8;
@@ -2704,6 +2711,39 @@ function cancelPaintStroke() {
   refreshFabs();
 }
 
+// Remove (and refund budget for) any committed strokes from index `idx`
+// onward. Used to undo the first tap of a double-tap so a zoom gesture never
+// leaves a stray painted dot behind.
+function removeStrokesFrom(idx) {
+  if (idx == null || idx >= pendingStrokes.length) return;
+  const removed = pendingStrokes.splice(idx);
+  for (const s of removed) usedBudget -= (s.area || 0);
+  redrawOverlay();
+  refreshFabs();
+}
+
+// ── Double-click / double-tap zoom (shared mouse + touch detection) ─────────
+// Touch handlers gate painting on single touches, so a double-tap can't be
+// recognized natively without it also registering as two paint dots. Detect
+// it manually: two taps within DOUBLE_TAP_MS and within DOUBLE_TAP_DIST px.
+// `firstTapStrokeIdx` remembers where the first tap's stroke began so the
+// second tap can splice it away before zooming.
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DIST = 30;
+let lastTapTime = 0, lastTapX = 0, lastTapY = 0, firstTapStrokeIdx = 0;
+
+function isDoubleTap(x, y) {
+  return (performance.now() - lastTapTime) < DOUBLE_TAP_MS &&
+         Math.abs(x - lastTapX) < DOUBLE_TAP_DIST &&
+         Math.abs(y - lastTapY) < DOUBLE_TAP_DIST;
+}
+function recordTap(x, y) {
+  firstTapStrokeIdx = pendingStrokes.length;
+  lastTapTime = performance.now();
+  lastTapX = x;
+  lastTapY = y;
+}
+
 // ── Desktop: paint vs. pan (middle-mouse or Space+left-drag) ────────────────
 let panning = false;
 let panLast = null;
@@ -2738,8 +2778,17 @@ overlayCanvas.addEventListener("mousedown", (e) => {
     return;
   }
   if (e.button !== 0) return;
+  // Double-click → zoom toward the cursor (undo the first click's dot first).
+  if (isDoubleTap(e.clientX, e.clientY)) {
+    lastTapTime = 0;
+    removeStrokesFrom(firstTapStrokeIdx);
+    zoomToggleAt(e.clientX, e.clientY);
+    return;
+  }
+  recordTap(e.clientX, e.clientY);
   startPaint(e);
 });
+overlayCanvas.addEventListener("dblclick", (e) => e.preventDefault());
 overlayCanvas.addEventListener("mousemove", (e) => {
   if (panning) {
     panBy(e.clientX - panLast.x, e.clientY - panLast.y);
@@ -2795,7 +2844,17 @@ overlayCanvas.addEventListener("touchstart", (e) => {
     cancelPaintStroke();
     pinchState = computePinch(e.touches);
   } else if (e.touches.length === 1 && !pinchState) {
-    startPaint(e.touches[0]);
+    const t = e.touches[0];
+    // Double-tap → zoom toward the tap (undo the first tap's dot first, and
+    // don't start a paint stroke for this tap).
+    if (isDoubleTap(t.clientX, t.clientY)) {
+      lastTapTime = 0;
+      removeStrokesFrom(firstTapStrokeIdx);
+      zoomToggleAt(t.clientX, t.clientY);
+      return;
+    }
+    recordTap(t.clientX, t.clientY);
+    startPaint(t);
   }
 }, { passive: false });
 
