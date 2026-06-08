@@ -254,8 +254,56 @@
       padding: 4px;
       min-height: 0;
       width: 100%;
+      position: relative;
+      overflow: hidden;
     }
-    #canvas-container { position: relative; }
+    #canvas-container {
+      position: relative;
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    /* ── Zoom controls (floating over canvas) ─────── */
+    #zoom-controls {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      z-index: 5;
+    }
+    .zoom-btn {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(20,26,38,0.72);
+      color: #cdd6e4;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
+      transition: transform 0.1s, border-color 0.15s, opacity 0.15s;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .zoom-btn:hover { border-color: rgba(255,255,255,0.4); }
+    .zoom-btn:active { transform: scale(0.92); }
+    .zoom-btn:disabled { opacity: 0.35; cursor: default; }
+    #zoom-label {
+      font-size: 10px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      color: #9fb0c8;
+      background: rgba(20,26,38,0.72);
+      border-radius: 8px;
+      padding: 1px 5px;
+      user-select: none;
+      min-width: 30px;
+      text-align: center;
+    }
     #sand-canvas {
       image-rendering: pixelated;
       border-radius: 8px;
@@ -603,6 +651,12 @@
   <div id="canvas-container">
     <canvas id="sand-canvas"></canvas>
     <canvas id="overlay-canvas"></canvas>
+  </div>
+  <div id="zoom-controls">
+    <button class="zoom-btn" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+    <div id="zoom-label">1.0&times;</div>
+    <button class="zoom-btn" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">&minus;</button>
+    <button class="zoom-btn" id="zoom-fit" type="button" title="Fit to screen" aria-label="Fit to screen">&#x2922;</button>
   </div>
 </div>
 
@@ -1116,10 +1170,87 @@ const canvas = document.getElementById("sand-canvas");
 const overlayCanvas = document.getElementById("overlay-canvas");
 const overlayCtx = overlayCanvas.getContext("2d");
 const canvasContainer = document.getElementById("canvas-container");
+const canvasWrap = document.getElementById("canvas-wrap");
 let redrawOverlay = function() {};
 
+// ── View transform (client-side zoom/pan only) ──────────────────────────────
+// Zoom/pan are a pure CSS transform on #canvas-container; the WebGL backing
+// store stays at WIDTH×HEIGHT (no shader changes) and `image-rendering:
+// pixelated` upscales crisply. Because eventToSim() reads
+// getBoundingClientRect(), coordinate mapping stays correct at any zoom/pan
+// with no changes — the rect already reflects the transform. This is purely
+// local view state: never persisted, never shared, never affects the sim.
+const ZOOM_MIN = 1;       // fit-to-screen; zooming out further only letterboxes
+const ZOOM_MAX = 8;       // ~tens of screen px per sim cell — single-cell precision
+const ZOOM_STEP = 1.25;   // multiplicative per button press / wheel notch
+let zoom = 1;
+let panX = 0, panY = 0;   // screen-px offset of the scaled container's center
+let baseW = WIDTH, baseH = HEIGHT; // fit-size (CSS px) computed by sizeCanvas
+
+function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+function updateZoomUI() {
+  const zin = document.getElementById("zoom-in");
+  const zout = document.getElementById("zoom-out");
+  const zfit = document.getElementById("zoom-fit");
+  const zlabel = document.getElementById("zoom-label");
+  if (zin) zin.disabled = zoom >= ZOOM_MAX - 1e-6;
+  if (zout) zout.disabled = zoom <= ZOOM_MIN + 1e-6;
+  if (zfit) zfit.disabled = (zoom <= ZOOM_MIN + 1e-6 && panX === 0 && panY === 0);
+  if (zlabel) zlabel.innerHTML = zoom.toFixed(1) + "&times;";
+}
+
+// Writes the transform after clamping zoom and pan so the scaled container
+// always covers the wrap (no background gaps). At zoom===1 the clamp forces
+// pan to 0 naturally (the fit-size is always smaller than the wrap).
+function applyView() {
+  zoom = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
+  const wrapW = canvasWrap.clientWidth;
+  const wrapH = canvasWrap.clientHeight;
+  const scaledW = baseW * zoom;
+  const scaledH = baseH * zoom;
+  const maxPanX = Math.max(0, (scaledW - wrapW) / 2);
+  const maxPanY = Math.max(0, (scaledH - wrapH) / 2);
+  panX = clamp(panX, -maxPanX, maxPanX);
+  panY = clamp(panY, -maxPanY, maxPanY);
+  canvasContainer.style.transform =
+    "translate(" + panX + "px, " + panY + "px) scale(" + zoom + ")";
+  updateZoomUI();
+}
+
+// Zoom to `nz`, keeping the sim point under the screen anchor (ax, ay)
+// stationary. Derived from screen = wrapCenter + pan + zoom*c (c = content
+// point relative to container center): pan' = u + r*(pan - u), r = nz/zoom.
+function zoomAt(nz, ax, ay) {
+  nz = clamp(nz, ZOOM_MIN, ZOOM_MAX);
+  const r = canvasWrap.getBoundingClientRect();
+  const u = ax - (r.left + r.width / 2);
+  const v = ay - (r.top + r.height / 2);
+  const ratio = nz / zoom;
+  panX = u + ratio * (panX - u);
+  panY = v + ratio * (panY - v);
+  zoom = nz;
+  applyView();
+}
+
+function zoomAtCenter(nz) {
+  const r = canvasWrap.getBoundingClientRect();
+  zoomAt(nz, r.left + r.width / 2, r.top + r.height / 2);
+}
+
+function panBy(dx, dy) { panX += dx; panY += dy; applyView(); }
+
+function fitView() { zoom = 1; panX = 0; panY = 0; applyView(); }
+
+// Double-click / double-tap: zoom in one step toward (ax, ay); once at
+// ZOOM_MAX, snap back to fit so the gesture toggles zoomed ⇄ fit.
+function zoomToggleAt(ax, ay) {
+  if (zoom >= ZOOM_MAX - 1e-6) fitView();
+  else zoomAt(zoom * ZOOM_STEP, ax, ay);
+}
+
 function sizeCanvas() {
-  const wrap = document.getElementById("canvas-wrap");
+  const wrap = canvasWrap;
   const maxW = wrap.clientWidth - 8;
   const maxH = wrap.clientHeight - 8;
   const aspect = WIDTH / HEIGHT;
@@ -1136,10 +1267,24 @@ function sizeCanvas() {
   overlayCanvas.style.height = h + "px";
   overlayCanvas.width = WIDTH;
   overlayCanvas.height = HEIGHT;
+  baseW = w;
+  baseH = h;
   redrawOverlay();
+  // Re-clamp pan against the new base size while preserving current zoom.
+  applyView();
 }
 sizeCanvas();
 window.addEventListener("resize", sizeCanvas);
+
+// ── Zoom control buttons (anchor at viewport center) ────────────────────────
+(function wireZoomButtons() {
+  const zin = document.getElementById("zoom-in");
+  const zout = document.getElementById("zoom-out");
+  const zfit = document.getElementById("zoom-fit");
+  if (zin) zin.addEventListener("click", () => zoomAtCenter(zoom * ZOOM_STEP));
+  if (zout) zout.addEventListener("click", () => zoomAtCenter(zoom / ZOOM_STEP));
+  if (zfit) zfit.addEventListener("click", fitView);
+})();
 
 // =============================================================================
 // WEBGL RENDERER
@@ -2551,12 +2696,189 @@ function endPaint() {
   lastPaintPos = null;
 }
 
-overlayCanvas.addEventListener("mousedown", startPaint);
-overlayCanvas.addEventListener("mousemove", movePaint);
-window.addEventListener("mouseup", endPaint);
-overlayCanvas.addEventListener("touchstart", (e) => { e.preventDefault(); for (const touch of e.touches) startPaint(touch); }, { passive: false });
-overlayCanvas.addEventListener("touchmove", (e) => { e.preventDefault(); if (painting) for (const touch of e.touches) movePaint(touch); }, { passive: false });
-window.addEventListener("touchend", endPaint);
+// Abandon an in-progress stroke without committing it — used when a second
+// touch lands (the gesture turns into a pinch/pan, not a draw). Discards the
+// segments added since this drag began and refunds their budget so the
+// half-drawn stroke doesn't leak into pendingStrokes.
+function cancelPaintStroke() {
+  if (!painting) return;
+  if (liveSimplifyTimer) { clearTimeout(liveSimplifyTimer); liveSimplifyTimer = null; }
+  const removed = pendingStrokes.splice(dragStartIdx);
+  for (const s of removed) usedBudget -= (s.area || 0);
+  painting = false;
+  lastPaintPos = null;
+  redrawOverlay();
+  refreshFabs();
+}
+
+// Remove (and refund budget for) any committed strokes from index `idx`
+// onward. Used to undo the first tap of a double-tap so a zoom gesture never
+// leaves a stray painted dot behind.
+function removeStrokesFrom(idx) {
+  if (idx == null || idx >= pendingStrokes.length) return;
+  const removed = pendingStrokes.splice(idx);
+  for (const s of removed) usedBudget -= (s.area || 0);
+  redrawOverlay();
+  refreshFabs();
+}
+
+// ── Double-click / double-tap zoom (shared mouse + touch detection) ─────────
+// Touch handlers gate painting on single touches, so a double-tap can't be
+// recognized natively without it also registering as two paint dots. Detect
+// it manually: two taps within DOUBLE_TAP_MS and within DOUBLE_TAP_DIST px.
+// `firstTapStrokeIdx` remembers where the first tap's stroke began so the
+// second tap can splice it away before zooming.
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DIST = 30;
+let lastTapTime = 0, lastTapX = 0, lastTapY = 0, firstTapStrokeIdx = 0;
+
+function isDoubleTap(x, y) {
+  return (performance.now() - lastTapTime) < DOUBLE_TAP_MS &&
+         Math.abs(x - lastTapX) < DOUBLE_TAP_DIST &&
+         Math.abs(y - lastTapY) < DOUBLE_TAP_DIST;
+}
+function recordTap(x, y) {
+  firstTapStrokeIdx = pendingStrokes.length;
+  lastTapTime = performance.now();
+  lastTapX = x;
+  lastTapY = y;
+}
+
+// ── Desktop: paint vs. pan (middle-mouse or Space+left-drag) ────────────────
+let panning = false;
+let panLast = null;
+let spaceDown = false;
+
+function isTypingTarget() {
+  const t = document.activeElement;
+  return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && !isTypingTarget()) {
+    spaceDown = true;
+    if (!panning) overlayCanvas.style.cursor = "grab";
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code === "Space") {
+    spaceDown = false;
+    if (!panning) overlayCanvas.style.cursor = "";
+  }
+});
+
+overlayCanvas.addEventListener("mousedown", (e) => {
+  // Middle button, or left button while Space is held → pan instead of paint.
+  if (e.button === 1 || (e.button === 0 && spaceDown)) {
+    e.preventDefault();
+    panning = true;
+    panLast = { x: e.clientX, y: e.clientY };
+    overlayCanvas.style.cursor = "grabbing";
+    return;
+  }
+  if (e.button !== 0) return;
+  // Double-click → zoom toward the cursor (undo the first click's dot first).
+  if (isDoubleTap(e.clientX, e.clientY)) {
+    lastTapTime = 0;
+    removeStrokesFrom(firstTapStrokeIdx);
+    zoomToggleAt(e.clientX, e.clientY);
+    return;
+  }
+  recordTap(e.clientX, e.clientY);
+  startPaint(e);
+});
+overlayCanvas.addEventListener("dblclick", (e) => e.preventDefault());
+overlayCanvas.addEventListener("mousemove", (e) => {
+  if (panning) {
+    panBy(e.clientX - panLast.x, e.clientY - panLast.y);
+    panLast = { x: e.clientX, y: e.clientY };
+    return;
+  }
+  movePaint(e);
+});
+window.addEventListener("mouseup", () => {
+  if (panning) {
+    panning = false;
+    panLast = null;
+    overlayCanvas.style.cursor = spaceDown ? "grab" : "";
+    return;
+  }
+  endPaint();
+});
+
+// ── Mouse wheel / trackpad: zoom (anchored at cursor) or pan ────────────────
+overlayCanvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (e.ctrlKey) {
+    // Trackpad pinch arrives as ctrl+wheel — continuous zoom at cursor.
+    zoomAt(zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  } else if (zoom > 1 && (e.deltaX !== 0 || e.shiftKey)) {
+    // Two-axis (trackpad) or shift+wheel while zoomed → pan.
+    const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
+    const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
+    panBy(-dx, -dy);
+  } else {
+    // Plain wheel → step zoom at cursor.
+    zoomAt(zoom * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), e.clientX, e.clientY);
+  }
+}, { passive: false });
+
+// ── Touch: 1 finger paints; 2+ fingers pinch-zoom + pan ─────────────────────
+let pinchState = null;
+function computePinch(touches) {
+  const a = touches[0], b = touches[1];
+  const dx = b.clientX - a.clientX;
+  const dy = b.clientY - a.clientY;
+  return {
+    dist: Math.max(1, Math.hypot(dx, dy)),
+    midX: (a.clientX + b.clientX) / 2,
+    midY: (a.clientY + b.clientY) / 2,
+  };
+}
+
+overlayCanvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  if (e.touches.length >= 2) {
+    // Second finger down → this is a zoom/pan gesture, not a draw.
+    cancelPaintStroke();
+    pinchState = computePinch(e.touches);
+  } else if (e.touches.length === 1 && !pinchState) {
+    const t = e.touches[0];
+    // Double-tap → zoom toward the tap (undo the first tap's dot first, and
+    // don't start a paint stroke for this tap).
+    if (isDoubleTap(t.clientX, t.clientY)) {
+      lastTapTime = 0;
+      removeStrokesFrom(firstTapStrokeIdx);
+      zoomToggleAt(t.clientX, t.clientY);
+      return;
+    }
+    recordTap(t.clientX, t.clientY);
+    startPaint(t);
+  }
+}, { passive: false });
+
+overlayCanvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  if (pinchState && e.touches.length >= 2) {
+    const p = computePinch(e.touches);
+    // Midpoint movement drives pan; distance ratio drives zoom (anchored at
+    // the midpoint). Pan first, then zoomAt() (which reads current pan).
+    panX += p.midX - pinchState.midX;
+    panY += p.midY - pinchState.midY;
+    zoomAt(zoom * (p.dist / pinchState.dist), p.midX, p.midY);
+    pinchState = p;
+  } else if (painting && e.touches.length === 1) {
+    movePaint(e.touches[0]);
+  }
+}, { passive: false });
+
+window.addEventListener("touchend", (e) => {
+  // Drop pinch state once fewer than 2 fingers remain. A lingering single
+  // finger does NOT resume painting (no fresh touchstart fired for it).
+  if (e.touches.length < 2) pinchState = null;
+  if (e.touches.length === 0) endPaint();
+});
 
 // ── Info overlay toggle ─────────────────────────────────────────────────────
 (function () {
