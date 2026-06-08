@@ -3,6 +3,6 @@ node_modules/
 *.log
 data/
 snapshot.json
-sandspiel/crate/pkg/
-sandspiel/crate/target/
+wasm/crate/pkg/
+wasm/crate/target/
 .DS_Store
