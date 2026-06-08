@@ -24,6 +24,15 @@ const TEST_TRANSACTIONS = [
   { tick: 800, memo: { app: "falling-sands", type: "draw", s: [[100, 200, 120, 220, 3, 8]] } },
   { tick: 1500, memo: { app: "falling-sands", type: "draw", s: [[250, 50, 250, 200, 5, 2]] } },
   { tick: 3000, memo: { app: "falling-sands", type: "draw", s: [[10, 300, 290, 300, 8, 1]] } },
+  // Electricity & automation scene: a battery (29) feeding a horizontal wire
+  // (27) run, a switch (30) breaking it, and a stray spark (28). Exercises the
+  // new species through the same server/client-identical draw + replay path.
+  { tick: 600, memo: { app: "falling-sands", type: "draw", s: [
+    [60, 250, 60, 250, 3, 29],     // battery
+    [62, 250, 200, 250, 2, 27],    // wire run
+    [130, 250, 130, 250, 2, 30],   // switch (open) breaking the run
+    [205, 250, 205, 250, 2, 28],   // stray spark
+  ] } },
 ];
 
 function spawnWorker(checkpoints, transactions) {
