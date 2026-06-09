@@ -873,9 +873,14 @@
      cache state naturally. -->
 <script src="https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js"></script>
 <script src="/usernode-usernames.js"></script>
-<script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<!-- regl + pako are self-hosted (same-origin) rather than pulled from a
+     CDN: it removes two cross-origin DNS/TLS round trips from the critical
+     path, drops a redundant double-download of regl, and lets us serve them
+     gzip-compressed with a 1-year immutable cache. The version segment is
+     templated server-side (renderIndexHtml) so a redeploy that changes the
+     bundle busts the cache. -->
+<script src="/regl.__BUILD_VERSION__.min.js"></script>
+<script src="/pako.__BUILD_VERSION__.min.js"></script>
 <script src="/wasm-browser.js"></script>
 
 <script>
@@ -2332,7 +2337,7 @@ function startRound() {
   try {
     setLoading(10, "Loading simulation engine...");
     statusEl.textContent = "Loading WASM...";
-    const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
+    const wasm = await window.loadSandspielWasm("/sandtable_bg.__WASM_VERSION__.wasm");
     universe = wasm.Universe.new(WIDTH, HEIGHT);
     wasmMemory = wasm.memory;
     wasmPrng = wasm.prng || null;
