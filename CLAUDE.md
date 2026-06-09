@@ -40,10 +40,15 @@ hosted conventions win.
   on-disk `snapshot.json` to a Postgres row in `sands_state`. Hydrates
   disk from Postgres on boot, mirrors disk writes back via a debounced
   `fs.watch`, flushes on `SIGTERM`. Engine.js is unaware of Postgres.
-- `sandspiel/` — Git submodule (HTTPS,
-  `https://github.com/Usernode-Labs/sandspiel.git`, pinned to
-  `347caa64`). The `crate/` subdirectory is the Rust+WASM physics engine
-  source; the Dockerfile compiles it via `wasm-pack`.
+- `wasm/crate/` — **In-repo, tracked** Rust+WASM physics engine source
+  (originally from `Usernode-Labs/sandspiel`, now vendored here). The
+  Dockerfile compiles it via `wasm-pack` at deploy time. This replaces the
+  old `sandspiel/` git submodule: the submodule was removed because new
+  species code (the electricity/automation system) had to live in commits
+  that could not be pushed to the external sandspiel remote from the deploy
+  worker, which broke the `--recurse-submodules` clone. Editing the Rust now
+  means editing `wasm/crate/src/{lib,species,utils}.rs` directly and
+  committing — no external repo, no submodule pin to bump.
 - `public/` — Browser UI (single HTML file, plus the shared
   `usernode-usernames.js` and `usernode-loading.js`). The bridge is loaded
   from `https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js` —
@@ -57,15 +62,19 @@ hosted conventions win.
 ## Running locally
 
 ```bash
-git submodule update --init --recursive   # populate sandspiel/
-cd sandspiel && wasm-pack build crate --target nodejs && cd ..
+cd wasm && wasm-pack build crate --target nodejs && cd ..   # builds wasm/crate/pkg/
+# copy the built pkg to the runtime path the loaders read:
+mkdir -p sandspiel/crate && cp -r wasm/crate/pkg sandspiel/crate/pkg
 npm install
 npm run dev                                # mock mode, http://localhost:3000
 npm start                                  # production mode (requires .env)
 ```
 
-The submodule + WASM build are one-time setup; subsequent runs are just
-`npm run dev` / `npm start`.
+The WASM build is one-time setup; subsequent runs are just
+`npm run dev` / `npm start`. (The Dockerfile does the build + copy
+automatically — see its two stages.) The runtime pkg path
+`sandspiel/crate/pkg/` is retained only so `wasm-loader.js` and
+`server.js` need no change; the *source* lives at `wasm/crate/`.
 
 ## Auth model
 
@@ -156,14 +165,24 @@ CREATE TABLE IF NOT EXISTS sands_state (
 
 Single row keyed `'snapshot'`. ~120 KB compressed.
 
-## Submodule note
+## WASM crate source (no submodule)
 
-`sandspiel/` is a git submodule pointing at the public
-`Usernode-Labs/sandspiel` repo via HTTPS so the SV build container (which
-has no SSH keys) can clone it. Social Vibecoding's `app-creator.js`
-clones with `--recurse-submodules --shallow-submodules`, so the
-submodule is populated automatically at deploy time. When working
-locally, run `git submodule update --init --recursive` after cloning.
+The physics engine Rust source is **vendored in-repo at `wasm/crate/`** and
+tracked normally — there is no git submodule anymore. The previous
+`sandspiel/` submodule (pinned to `Usernode-Labs/sandspiel`) was removed:
+because the deploy worker has no GitHub credentials it cannot push new
+commits to that external repo, so any submodule pin referencing locally-made
+species changes (the electricity/automation system) was unreachable and the
+platform's `--recurse-submodules --shallow-submodules` clone failed before
+the Docker build even ran.
+
+Now the Dockerfile's stage 1 does `COPY wasm/ wasm/` and `wasm-pack build
+crate`, building straight from tracked repo source in the build context — no
+network clone, no external pin. To change the simulation, edit
+`wasm/crate/src/*.rs` and commit; the next deploy rebuilds the WASM. If
+upstream `sandspiel` lands fixes worth taking, re-vendor by copying its
+`crate/src` files into `wasm/crate/src` (the inverse of the old "re-vendor
+from upstream" rule).
 
 ## App-specific conventions
 

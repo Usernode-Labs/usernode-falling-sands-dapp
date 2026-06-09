@@ -13,8 +13,8 @@ node.
 ## Quick start
 
 ```bash
-git submodule update --init --recursive
-cd sandspiel && wasm-pack build crate --target nodejs && cd ..
+cd wasm && wasm-pack build crate --target nodejs && cd ..   # builds wasm/crate/pkg/
+mkdir -p sandspiel/crate && cp -r wasm/crate/pkg sandspiel/crate/pkg  # runtime path
 npm install
 npm run dev          # mock mode at http://localhost:3000
 ```
@@ -43,7 +43,7 @@ falling-sands/
     dapp-server.js       Vendored helpers from usernode-dapp-starter.
     tx-match.js          Vendored helper used by dapp-server.js.
     snapshot-store.js    LOCAL. Postgres ↔ on-disk snapshot bridge.
-  sandspiel/             Submodule (HTTPS, pinned). Rust+WASM source.
+  wasm/crate/            In-repo Rust+WASM physics source (built by Dockerfile).
   public/
     index.html
     usernode-usernames.js

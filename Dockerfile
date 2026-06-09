@@ -1,8 +1,10 @@
 # Build context: repository root.
 #
-# Stage 1: Build the WASM module from sandspiel/crate (a git submodule;
-# Social Vibecoding clones with --recurse-submodules so this is populated
-# at build time).
+# Stage 1: Build the WASM module from the in-repo Rust crate at wasm/crate.
+# The crate source is vendored directly into this repository (tracked under
+# wasm/), so the build no longer depends on a `--recurse-submodules` clone of
+# an external pinned commit. Edit the Rust under wasm/crate/src and the next
+# deploy rebuilds the WASM from it.
 FROM rust:1.83-slim AS wasm-builder
 
 RUN apt-get update \
@@ -11,8 +13,8 @@ RUN apt-get update \
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 WORKDIR /build
-COPY sandspiel/ sandspiel/
-RUN cd sandspiel && wasm-pack build crate --target nodejs
+COPY wasm/ wasm/
+RUN cd wasm && wasm-pack build crate --target nodejs
 
 # Stage 2: Node.js runtime.
 #
@@ -25,8 +27,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN { [ -f package-lock.json ] && npm ci --omit=dev || npm install --omit=dev; }
 
-# Built WASM package - the engine + browser loader both look here.
-COPY --from=wasm-builder /build/sandspiel/crate/pkg/ sandspiel/crate/pkg/
+# Built WASM package. The engine (wasm-loader.js) and server.js both read
+# sandspiel/crate/pkg/sandtable_bg.wasm at runtime, so the freshly-built pkg
+# is copied to that stable path even though the source now lives at wasm/crate.
+COPY --from=wasm-builder /build/wasm/crate/pkg/ sandspiel/crate/pkg/
 
 # Server, engine, loaders, lib, public assets, tests.
 COPY server.js engine.js seed-content.js wasm-loader.js wasm-browser.js ./
