@@ -47,6 +47,7 @@ pub enum Species {
     Spark = 28,   // travelling current; lives one tick then decays to refractory wire
     Battery = 29, // source-gated pulse emitter (FLAG_SOURCES)
     Switch = 30,  // insulating, toggleable break in a wire run (open by default)
+    Critter = 31, // genome-driven creature; ra = genome byte, rb = energy
 }
 
 // Electricity tuning constants. See the Electricity & Automation spec.
@@ -92,6 +93,7 @@ impl Species {
             Species::Spark => update_spark(cell, api),
             Species::Battery => update_battery(cell, api),
             Species::Switch => update_switch(cell, api),
+            Species::Critter => update_critter(cell, api),
         }
     }
 }
@@ -1569,5 +1571,13 @@ pub fn update_battery(cell: Cell, mut api: SandApi) {
 // overpainting the cell with Wire (electrically identical to a closed switch),
 // which is just another draw transaction — no per-cell mutable state needed.
 pub fn update_switch(cell: Cell, mut api: SandApi) {
+    api.set(0, 0, cell);
+}
+
+// Critter: genome-driven creature. ra encodes trait bits (heat/aquatic/acid/
+// burrower in bits 0-3, lineage tint in bits 4-7); rb encodes energy level.
+// Physics behaviour is reserved for a future commit — for now the cell is
+// static and the species exists to satisfy the exhaustive match.
+pub fn update_critter(cell: Cell, mut api: SandApi) {
     api.set(0, 0, cell);
 }

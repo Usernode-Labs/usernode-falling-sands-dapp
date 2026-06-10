@@ -524,6 +524,83 @@
       display: block;
       pointer-events: none;
     }
+    /* ── Critter legend ──────────────────────────────────────────────── */
+    #critter-legend {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      z-index: 6;
+      width: 188px;
+      background: rgba(20,26,38,0.82);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #d7e0ee;
+      font-size: 11px;
+      line-height: 1.35;
+      user-select: none;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    }
+    #critter-legend[hidden] { display: none; }
+    #critter-legend-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    #critter-legend-title {
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      color: #eaf1fb;
+    }
+    #critter-legend-toggle {
+      width: 18px;
+      height: 18px;
+      line-height: 16px;
+      text-align: center;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.06);
+      color: #cdd8e8;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    #critter-legend-toggle:hover { background: rgba(255,255,255,0.14); }
+    #critter-legend.collapsed #critter-legend-body { display: none; }
+    #critter-legend-body { padding: 7px 8px; }
+    .cl-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+    .cl-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18);
+    }
+    .cl-text { flex: 1; }
+    .cl-text em { color: #9fb0c8; font-style: normal; font-size: 10px; }
+    .cl-note {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 7px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      color: #aebbcf;
+      font-size: 10px;
+    }
+    .cl-grad {
+      width: 28px;
+      height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18);
+    }
     #overlay-canvas {
       position: absolute;
       inset: 0;
@@ -862,6 +939,32 @@
     <button class="zoom-btn" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">&minus;</button>
     <button class="zoom-btn" id="zoom-fit" type="button" title="Fit to screen" aria-label="Fit to screen">&#x2922;</button>
   </div>
+
+  <!-- Critter legend — decodes the genome→colour mapping. Purely
+       presentational; swatches are generated in JS from the very same
+       hue logic the Critter shader branch uses, so the key can never
+       drift from what's actually rendered. Shown only when Critter is the
+       selected species (toggle via the × / collapse button). -->
+  <div id="critter-legend" hidden>
+    <div id="critter-legend-head">
+      <span id="critter-legend-title">Critter genome</span>
+      <button id="critter-legend-toggle" type="button" title="Hide legend" aria-label="Hide legend">&minus;</button>
+    </div>
+    <div id="critter-legend-body">
+      <div class="cl-row"><span class="cl-swatch" data-trait="base"></span><span class="cl-text">Base lineage</span></div>
+      <div class="cl-row"><span class="cl-swatch" data-trait="heat"></span><span class="cl-text">Heat‑tolerant <em>(lives by fire/lava)</em></span></div>
+      <div class="cl-row"><span class="cl-swatch" data-trait="aquatic"></span><span class="cl-text">Aquatic <em>(lives in water)</em></span></div>
+      <div class="cl-row"><span class="cl-swatch" data-trait="acid"></span><span class="cl-text">Acid‑resistant <em>(survives acid)</em></span></div>
+      <div class="cl-note">
+        <span class="cl-grad" id="cl-energy-grad"></span>
+        Bright = well‑fed · dim = starving
+      </div>
+      <div class="cl-note">
+        <span class="cl-grad" id="cl-tint-grad"></span>
+        Tint within a colour = family / lineage
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- usernode-bridge is centralized in Usernode Social Vibecoding at
@@ -1141,6 +1244,7 @@ const SPECIES = [
   { id: 5,  name: "Clone", color: "#9c27b0" },
   { id: 17, name: "Rocket",color: "#ff1744" },
   { id: 15, name: "Mite",  color: "#ce93d8" },
+  { id: 31, name: "Critter", color: "#7fd86b" },
   { id: 1,  name: "Wall",  color: "#555555" },
   { id: 20, name: "Spout", color: "#2266aa", source: true },
   { id: 21, name: "Sand Src", color: "#8a7a50", source: true },
@@ -1186,7 +1290,91 @@ function refreshCurrent() {
   const sp = speciesById[selectedSpecies] || SPECIES[1];
   currentSwatchEl.style.background = sp.color;
   currentNameEl.textContent = sp.name;
+  updateCritterLegend();
 }
+
+// ── Critter legend ──────────────────────────────────────────────────────────
+// Decodes the genome→colour mapping for players. Purely presentational. The
+// swatch colours are generated here from the SAME hue logic the Critter shader
+// branch uses (see FRAGMENT_SHADER, `type == 31`), so the key can never drift
+// from what's rendered: genome bit 0 = heat tolerance, bit 1 = aquatic, bit 2 =
+// acid resistance, bit 3 = burrower, bits 4-7 = lineage tint; energy (rb) is
+// lightness. Keep these constants in sync if the shader branch changes.
+const CRITTER_ID = 31;
+const critterLegendEl     = document.getElementById("critter-legend");
+const critterLegendToggle = document.getElementById("critter-legend-toggle");
+let critterLegendCollapsed = false;
+
+function _fract(x) { return x - Math.floor(x); }
+
+// Mirror of the GLSL hsv2rgb() in FRAGMENT_SHADER.
+function _hsv2rgb(h, s, v) {
+  const K = [1.0, 2.0 / 3.0, 1.0 / 3.0];
+  return K.map((kc) => {
+    const p = Math.abs(_fract(h + kc) * 6.0 - 3.0);
+    const mixed = (1.0 - s) + Math.min(Math.max(p - 1.0, 0.0), 1.0) * s;
+    return Math.round(Math.min(Math.max(v * mixed, 0.0), 1.0) * 255);
+  });
+}
+
+// Mirror of the Critter shader branch's hue/saturation/lightness math.
+function _critterColor(traits, energy01, tint01) {
+  const heat = traits.heat ? 1 : 0;
+  const aq   = traits.aq   ? 1 : 0;
+  const ac   = traits.ac   ? 1 : 0;
+  const bur  = traits.bur  ? 1 : 0;
+  let hue = 0.33;                          // base: green
+  hue = hue + (0.00 - hue) * heat;         // heat-tolerant → red
+  hue = hue + (0.60 - hue) * aq;           // aquatic → blue
+  hue = hue + (0.17 - hue) * ac;           // acid-resistant → toxic yellow-green
+  hue += (tint01 - 0.5) * 0.08;            // lineage variation within the band
+  const sat = 0.7 + bur * 0.2;
+  const light = 0.35 + energy01 * 0.5;
+  const [r, g, b] = _hsv2rgb(hue, sat, light);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function buildCritterLegend() {
+  if (!critterLegendEl) return;
+  const ENERGY = 0.9, TINT = 0.5;
+  const swatchTraits = {
+    base:    {},
+    heat:    { heat: true },
+    aquatic: { aq: true },
+    acid:    { ac: true },
+  };
+  critterLegendEl.querySelectorAll(".cl-swatch").forEach((el) => {
+    const t = el.getAttribute("data-trait");
+    el.style.background = _critterColor(swatchTraits[t] || {}, ENERGY, TINT);
+  });
+  const energyGrad = document.getElementById("cl-energy-grad");
+  if (energyGrad) {
+    const stops = [0.12, 0.35, 0.6, 0.85, 1.0].map((e) => _critterColor({}, e, TINT));
+    energyGrad.style.background = `linear-gradient(90deg, ${stops.join(", ")})`;
+  }
+  const tintGrad = document.getElementById("cl-tint-grad");
+  if (tintGrad) {
+    const stops = [0, 0.25, 0.5, 0.75, 1.0].map((tn) => _critterColor({}, ENERGY, tn));
+    tintGrad.style.background = `linear-gradient(90deg, ${stops.join(", ")})`;
+  }
+}
+
+function updateCritterLegend() {
+  if (!critterLegendEl) return;
+  critterLegendEl.hidden = (selectedSpecies !== CRITTER_ID);
+}
+
+if (critterLegendToggle) {
+  critterLegendToggle.addEventListener("click", () => {
+    critterLegendCollapsed = !critterLegendCollapsed;
+    critterLegendEl.classList.toggle("collapsed", critterLegendCollapsed);
+    critterLegendToggle.textContent = critterLegendCollapsed ? "+" : "−";
+    critterLegendToggle.title = critterLegendCollapsed ? "Show legend" : "Hide legend";
+  });
+}
+
+buildCritterLegend();
+updateCritterLegend();
 
 function refreshQuickBar() {
   quickBar.innerHTML = "";
@@ -1673,6 +1861,25 @@ void main() {
   else if (type == 28) { hue = 0.15; saturation = 0.85; lightness = 0.85 + d.g * 0.15; }           // Spark: bright near-white-yellow
   else if (type == 29) { hue = 0.38; saturation = 0.75; lightness = 0.45 + d.g * 0.1; }            // Battery: green
   else if (type == 30) { hue = 0.08; saturation = 0.5; lightness = 0.22 + d.g * 0.08; }            // Switch: dark brown
+  else if (type == 31) {
+    // Critter: genome (ra, in d.g) drives hue, energy (rb, in d.b) drives
+    // lightness. Trait bits steer the hue band so adapted populations are
+    // visually distinct; the lineage tint (high nibble) spreads them within
+    // the band. The Critter legend (#critter-legend) mirrors this exact math.
+    float ra = floor(d.g * 255.0 + 0.5);
+    float heat = mod(floor(ra), 2.0);
+    float aq = mod(floor(ra / 2.0), 2.0);
+    float ac = mod(floor(ra / 4.0), 2.0);
+    float bur = mod(floor(ra / 8.0), 2.0);
+    float tint = floor(ra / 16.0) / 15.0;
+    hue = 0.33;                 // base: green
+    hue = mix(hue, 0.00, heat); // heat-tolerant → red
+    hue = mix(hue, 0.60, aq);   // aquatic → blue
+    hue = mix(hue, 0.17, ac);   // acid-resistant → toxic yellow-green
+    hue += (tint - 0.5) * 0.08; // lineage variation within the band
+    saturation = 0.7 + bur * 0.2;
+    lightness = 0.35 + d.b * 0.5;
+  }
 
   lightness *= (0.975 + snoise2(floor(uv * resolution / dpi)) * 0.025);
   gl_FragColor = vec4(hsv2rgb(vec3(hue, saturation, lightness)), a);
