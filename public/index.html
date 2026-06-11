@@ -825,6 +825,124 @@
       background: var(--accent);
       transition: width 0.3s ease-out;
     }
+
+    /* ── Auth / sign-in failure modal ─────────────────
+       Shown when a wallet/sign-in operation fails (sending a
+       drawing on-chain, resolving the node address). Surfaces a
+       stable, copyable error code so the user can report it. */
+    #auth-error {
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--sp-4);
+      background: rgba(5, 7, 11, 0.72);
+      backdrop-filter: blur(2px);
+    }
+    #auth-error[hidden] { display: none; }
+    #auth-error .ae-card {
+      width: 100%;
+      max-width: 360px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: var(--sp-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-3);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    }
+    #auth-error .ae-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-xl);
+      font-weight: 700;
+      color: var(--danger);
+      background: rgba(255, 107, 107, 0.12);
+      border: 1px solid rgba(255, 107, 107, 0.35);
+    }
+    #auth-error .ae-title {
+      font-size: var(--fs-lg);
+      font-weight: 600;
+      color: var(--text);
+    }
+    #auth-error .ae-msg {
+      font-size: var(--fs-md);
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    #auth-error .ae-codebox {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+    #auth-error .ae-codelabel {
+      font-size: var(--fs-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-label);
+      flex-shrink: 0;
+    }
+    #auth-error .ae-code {
+      flex: 1;
+      min-width: 0;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: var(--fs-md);
+      font-weight: 600;
+      color: var(--accent-bright);
+      letter-spacing: 0.3px;
+      word-break: break-all;
+      user-select: all;
+    }
+    #auth-error .ae-copy {
+      flex-shrink: 0;
+      cursor: pointer;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface-3);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    #auth-error .ae-copy:hover { background: var(--border-strong); }
+    #auth-error .ae-copy.copied {
+      color: var(--bg);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    #auth-error .ae-hint {
+      font-size: var(--fs-xs);
+      color: var(--text-faint);
+    }
+    #auth-error .ae-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--sp-2);
+      margin-top: var(--sp-1);
+    }
+    #auth-error .ae-btn {
+      cursor: pointer;
+      font-size: var(--fs-md);
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface-3);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 8px 16px;
+    }
+    #auth-error .ae-btn:hover { background: var(--border-strong); }
   </style>
 </head>
 <body>
@@ -833,6 +951,25 @@
   <div class="loader-title">Falling Sands</div>
   <div class="loader-track"><div class="loader-fill" id="loader-fill"></div></div>
   <div class="loader-status" id="loader-status">Loading...</div>
+</div>
+
+<!-- Sign-in / wallet failure modal. Populated + toggled by showAuthError().
+     Hidden until a wallet/auth operation fails. -->
+<div id="auth-error" hidden>
+  <div class="ae-card" role="alertdialog" aria-modal="true" aria-labelledby="ae-title" aria-describedby="ae-msg">
+    <div class="ae-icon" aria-hidden="true">!</div>
+    <div class="ae-title" id="ae-title">Sign-in failed</div>
+    <div class="ae-msg" id="ae-msg"></div>
+    <div class="ae-codebox">
+      <span class="ae-codelabel">Code</span>
+      <code class="ae-code" id="ae-code">—</code>
+      <button class="ae-copy" id="ae-copy" type="button">Copy</button>
+    </div>
+    <div class="ae-hint">Copy this code and include it when reporting the problem.</div>
+    <div class="ae-actions">
+      <button class="ae-btn" id="ae-dismiss" type="button">Dismiss</button>
+    </div>
+  </div>
 </div>
 
 <header id="app-header">
@@ -993,6 +1130,163 @@ window.onerror = function(msg, src, line) {
     errorStickyUntil = performance.now() + ERROR_HOLD_MS;
   }
 };
+
+// =============================================================================
+// AUTH / SIGN-IN FAILURE — stable error codes
+// =============================================================================
+// Wallet/sign-in operations (saving a drawing on-chain, resolving the node
+// address) route their failures through showAuthError(). It derives a stable,
+// human-readable code from the failure reason and/or HTTP status, shows it
+// prominently, and offers a Copy button so the user can paste it back when
+// reporting the issue. The code is deterministic for a given failure cause —
+// the same network/auth condition always yields the same code — so support
+// can map it straight back to the root cause.
+
+// Human-readable copy keyed by the symbolic reason token.
+const AUTH_ERR_REASONS = {
+  CANCEL:  "Sign-in was cancelled before it completed.",
+  TIMEOUT: "The wallet didn't respond in time. Please try again.",
+  AUTH:    "Your wallet session isn't authorized. Try signing in again.",
+  FORBID:  "This action was refused by the wallet or node.",
+  NOTFND:  "The wallet endpoint couldn't be found.",
+  SERVER:  "The network hit a server error. Please try again shortly.",
+  NOWALLET:"No Usernode wallet is connected. Open Falling Sands in the Usernode app, or scan the QR code to sign in.",
+  NETWORK: "Couldn't reach the network. Check your connection and retry.",
+  HTTP:    "The request failed unexpectedly.",
+  UNKNOWN: "Something went wrong while signing in.",
+};
+
+// Per-scope titles + short code segment. `scope` is passed by the caller so
+// the code names *where* the failure happened (e.g. SND-SEND-401).
+const AUTH_ERR_SCOPES = {
+  SEND: { seg: "SEND", title: "Couldn't save your drawing" },
+  ADDR: { seg: "ADDR", title: "Couldn't verify your wallet" },
+  AUTH: { seg: "AUTH", title: "Sign-in failed" },
+};
+
+// Derive a stable {code, status, reason, title, message, clipboard} from an
+// arbitrary thrown error + a scope hint. Pure function of its inputs (modulo
+// the timestamp embedded in the clipboard payload).
+function deriveAuthError(err, scopeHint) {
+  const scope = AUTH_ERR_SCOPES[scopeHint] || AUTH_ERR_SCOPES.AUTH;
+  const raw = err == null
+    ? ""
+    : (typeof err === "object" && err.message != null ? String(err.message) : String(err));
+  const lower = raw.toLowerCase();
+
+  // HTTP status: prefer a structured field, else scrape a 3-digit code from
+  // the message ("HTTP 401", "status: 503", etc.).
+  let status = null;
+  if (err && typeof err === "object" && Number.isFinite(err.status)) {
+    status = err.status;
+  } else {
+    const m = lower.match(/\b(\d{3})\b/);
+    if (m) { const n = +m[1]; if (n >= 100 && n <= 599) status = n; }
+  }
+
+  // Classify the failure into a stable reason token. Order matters: explicit
+  // user-cancel and timeout win over status codes; auth/permission/server
+  // buckets key off both status and message wording so the code is stable
+  // whether the cause arrives as a number or as prose.
+  let reason;
+  if (/cancel|reject|declin|denied|dismiss|user closed|aborted/.test(lower)) reason = "CANCEL";
+  else if (/timeout|timed out|deadline/.test(lower)) reason = "TIMEOUT";
+  else if (status === 401 || /unauthor|unauthenticated|invalid token|expired|not authenticated|no session/.test(lower)) reason = "AUTH";
+  else if (status === 403 || /forbidden|not allowed|permission/.test(lower)) reason = "FORBID";
+  else if (status === 404 || /\bnot found\b/.test(lower)) reason = "NOTFND";
+  else if ((status != null && status >= 500) || /server error|internal error|bad gateway|service unavailable|gateway timeout/.test(lower)) reason = "SERVER";
+  else if (/no wallet|not linked|no address|no node address|no channel|not connected|no bridge|bridge unavailable|usernode not|no usernode|getnodeaddress/.test(lower)) reason = "NOWALLET";
+  else if (/network|failed to fetch|load failed|\bfetch\b|offline|connection|networkerror|err_/.test(lower)) reason = "NETWORK";
+  else if (status != null) reason = "HTTP";
+  else reason = "UNKNOWN";
+
+  // Code's reason segment: HTTP-status-bearing failures use the numeric code
+  // (points straight at the cause); symbolic failures use the token.
+  const numericReasons = { AUTH: 1, FORBID: 1, NOTFND: 1, SERVER: 1, HTTP: 1 };
+  const seg = (status != null && numericReasons[reason]) ? String(status) : reason;
+  const code = "SND-" + scope.seg + "-" + seg;
+  const message = AUTH_ERR_REASONS[reason] || AUTH_ERR_REASONS.UNKNOWN;
+
+  // What the Copy button puts on the clipboard — the code plus the context a
+  // human triaging the report would want, on stable labelled lines.
+  const lines = [
+    "Falling Sands — sign-in error",
+    "Code: " + code,
+  ];
+  if (status != null) lines.push("Status: " + status);
+  lines.push("Where: " + scope.title);
+  if (raw) lines.push("Detail: " + raw.slice(0, 300));
+  if (typeof APP_PUBKEY === "string" && APP_PUBKEY) lines.push("App: " + APP_PUBKEY);
+  try { lines.push("Time: " + new Date().toISOString()); } catch (_) {}
+  const clipboard = lines.join("\n");
+
+  return { code, status, reason, title: scope.title, message, clipboard };
+}
+
+const _aeModal   = document.getElementById("auth-error");
+const _aeTitleEl = document.getElementById("ae-title");
+const _aeMsgEl   = document.getElementById("ae-msg");
+const _aeCodeEl  = document.getElementById("ae-code");
+const _aeCopyEl  = document.getElementById("ae-copy");
+const _aeDismiss = document.getElementById("ae-dismiss");
+let _aeClipboard = "";
+
+async function _aeCopy() {
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(_aeClipboard);
+      ok = true;
+    }
+  } catch (_) { /* fall through to legacy path */ }
+  if (!ok) {
+    // execCommand fallback for non-secure contexts / older WebViews.
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = _aeClipboard;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch (_) { ok = false; }
+  }
+  if (_aeCopyEl) {
+    _aeCopyEl.classList.toggle("copied", ok);
+    _aeCopyEl.textContent = ok ? "Copied" : "Copy failed";
+    setTimeout(() => {
+      if (!_aeCopyEl) return;
+      _aeCopyEl.classList.remove("copied");
+      _aeCopyEl.textContent = "Copy";
+    }, 1800);
+  }
+}
+
+function hideAuthError() {
+  if (_aeModal) _aeModal.hidden = true;
+}
+
+// Public entry point. `scopeHint` is one of SEND / ADDR / AUTH.
+function showAuthError(err, scopeHint) {
+  const info = deriveAuthError(err, scopeHint);
+  _aeClipboard = info.clipboard;
+  if (_aeTitleEl) _aeTitleEl.textContent = info.title;
+  if (_aeMsgEl)   _aeMsgEl.textContent = info.message;
+  if (_aeCodeEl)  _aeCodeEl.textContent = info.code;
+  if (_aeCopyEl)  { _aeCopyEl.classList.remove("copied"); _aeCopyEl.textContent = "Copy"; }
+  if (_aeModal)   _aeModal.hidden = false;
+  console.error("[sands-auth] " + info.code + (info.status != null ? " (HTTP " + info.status + ")" : ""), err);
+  return info;
+}
+
+if (_aeCopyEl)  _aeCopyEl.addEventListener("click", _aeCopy);
+if (_aeDismiss) _aeDismiss.addEventListener("click", hideAuthError);
+if (_aeModal) {
+  // Click the dimmed backdrop (but not the card) to dismiss.
+  _aeModal.addEventListener("click", (e) => { if (e.target === _aeModal) hideAuthError(); });
+}
 
 // =============================================================================
 // LOADING OVERLAY
@@ -3092,8 +3386,17 @@ btnSend.addEventListener("click", async () => {
       sentStrokesApplyTick = null;
       redrawOverlay();
       refreshFabs();
-      console.error("sendTransaction error:", e);
-      showError("Send failed: " + (e.message || e));
+      // Saving a drawing is the wallet/sign-in path, so a rejection here is
+      // an auth failure: surface a stable, copyable error code in the modal.
+      // A deliberate user-cancel isn't worth a modal — show only the toast.
+      const info = deriveAuthError(e, "SEND");
+      if (info.reason === "CANCEL") {
+        console.warn("sendTransaction cancelled:", e);
+        showError("Save cancelled.");
+      } else {
+        showAuthError(e, "SEND");
+        showError("Save failed — code " + info.code);
+      }
     }
     setSending(false, false);
   }
