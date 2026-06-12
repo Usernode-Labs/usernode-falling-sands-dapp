@@ -943,6 +943,75 @@
       padding: 8px 16px;
     }
     #auth-error .ae-btn:hover { background: var(--border-strong); }
+
+    /* In-overlay error region. The #status bar lives behind this opaque
+       overlay (z-index 500), so any failure surfaced there is invisible —
+       errors and the recovery action must be painted here instead. */
+    #loading-overlay .loader-error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--sp-3);
+      max-width: min(420px, calc(100% - 32px));
+      margin-top: var(--sp-2);
+    }
+    #loading-overlay .loader-error[hidden] { display: none; }
+    #loading-overlay .loader-error-msg {
+      font-size: var(--fs-sm);
+      color: var(--danger);
+      text-align: center;
+      line-height: 1.4;
+      word-break: break-word;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    #loading-overlay .loader-retry-btn {
+      font-family: var(--font-ui);
+      font-size: var(--fs-md);
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      padding: 10px 22px;
+      cursor: pointer;
+    }
+    #loading-overlay .loader-retry-btn:active { transform: translateY(1px); }
+    /* Non-blocking degraded-mode banner. Shown when the chain gate times
+       out but the engine is ready, so the user can keep drawing locally. */
+    #degraded-banner {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+      z-index: 450;
+      max-width: min(520px, calc(100% - 24px));
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(20, 24, 33, 0.94);
+      color: #e7edf7;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      font-size: var(--fs-sm);
+      line-height: 1.35;
+    }
+    #degraded-banner[hidden] { display: none; }
+    #degraded-banner .db-msg { flex: 1; }
+    #degraded-banner .db-close {
+      flex: none;
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0.7;
+      padding: 0 4px;
+    }
+    #degraded-banner .db-close:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -951,6 +1020,15 @@
   <div class="loader-title">Falling Sands</div>
   <div class="loader-track"><div class="loader-fill" id="loader-fill"></div></div>
   <div class="loader-status" id="loader-status">Loading...</div>
+  <div class="loader-error" id="loader-error" hidden>
+    <div class="loader-error-msg" id="loader-error-msg"></div>
+    <button type="button" class="loader-retry-btn" id="loader-retry-btn">Retry</button>
+  </div>
+</div>
+
+<div id="degraded-banner" hidden>
+  <span class="db-msg" id="degraded-banner-msg">Live updates unavailable — playing locally; other players' strokes may not appear.</span>
+  <button type="button" class="db-close" id="degraded-banner-close" aria-label="Dismiss">&#x2715;</button>
 </div>
 
 <!-- Sign-in / wallet failure modal. Populated + toggled by showAuthError().
@@ -1317,6 +1395,68 @@ const _SANDS_STREAM_KEY = "sands";
 let _engineLoaderReady = false;
 let _chainLoaderReady = false;
 let _loaderDismissed = false;
+let _loaderErrored = false;
+
+// Loader watchdog deadlines. These are escape hatches, not normal-path
+// timers — a healthy cold boot (which includes windowed deterministic
+// replay) dismisses the loader well before the soft notice fires. The
+// soft notice only reassures; the hard deadline forces a terminal
+// outcome so the user is never stranded behind a silent hang.
+const LOADER_SOFT_NOTICE_MS = 15000;
+const LOADER_HARD_DEADLINE_MS = 30000;
+// Bound the wait for the WS `init`/`resync` message after a socket
+// reaches OPEN. Past this the engine flag still hasn't flipped, so we
+// let the watchdog surface it rather than sitting silently at ≤45%.
+const WS_INIT_WAIT_MS = 8000;
+
+const _loaderError = document.getElementById("loader-error");
+const _loaderErrorMsg = document.getElementById("loader-error-msg");
+const _loaderRetryBtn = document.getElementById("loader-retry-btn");
+const _loaderTrackEl = _loaderOverlay ? _loaderOverlay.querySelector(".loader-track") : null;
+
+// Surface a terminal, copyable error inside the overlay itself. The
+// #status bar is painted behind this opaque overlay (z-index 500), so an
+// error written there is invisible — it must be shown here, with a
+// working recovery action.
+function showLoaderError(message) {
+  if (_loaderDismissed) return;
+  _loaderErrored = true;
+  if (_loaderStatus) _loaderStatus.textContent = "Something went wrong";
+  if (_loaderTrackEl) _loaderTrackEl.style.display = "none";
+  if (_loaderErrorMsg) _loaderErrorMsg.textContent = message || "Unexpected error.";
+  if (_loaderError) _loaderError.hidden = false;
+}
+
+// Re-running the failed phase in place would mean untangling a lot of
+// module-scope state (sockets, sim interval, gate flags); a full reload
+// is the correct-by-construction recovery and is cheap on a static shell.
+function retryBoot() {
+  location.reload();
+}
+if (_loaderRetryBtn) _loaderRetryBtn.addEventListener("click", retryBoot);
+
+// ── Degraded (local-only) mode ──────────────────────────────────────────────
+// Shown when the chain gate times out but the engine is up: the user can
+// keep drawing locally off the snapshot/WS tx stream. Informational only —
+// it never blocks drawing. If the chain later recovers, the existing
+// WS/resync machinery reconciles state on its own.
+const _degradedBanner = document.getElementById("degraded-banner");
+const _degradedBannerClose = document.getElementById("degraded-banner-close");
+let _degradedMode = false;
+function enterDegradedMode(message) {
+  if (_degradedMode) return;
+  _degradedMode = true;
+  if (_degradedBanner) {
+    if (message) {
+      const msgEl = document.getElementById("degraded-banner-msg");
+      if (msgEl) msgEl.textContent = message;
+    }
+    _degradedBanner.hidden = false;
+  }
+}
+if (_degradedBannerClose && _degradedBanner) {
+  _degradedBannerClose.addEventListener("click", () => { _degradedBanner.hidden = true; });
+}
 
 function tryDismissLoader() {
   if (_loaderDismissed) return;
@@ -1344,7 +1484,20 @@ async function pollChainReady() {
     return;
   }
 
+  const _pollStartMs = Date.now();
+
   while (!_chainLoaderReady) {
+    // Self-imposed deadline (defense in depth alongside the global
+    // watchdog). Once the engine is up and we've waited past the hard
+    // deadline without the chain becoming ready, drop into local-only
+    // mode and stop polling rather than spinning forever.
+    if (_engineLoaderReady && Date.now() - _pollStartMs > LOADER_HARD_DEADLINE_MS) {
+      _chainLoaderReady = true;
+      enterDegradedMode();
+      tryDismissLoader();
+      return;
+    }
+
     let snap = null;
     try {
       const resp = await fetch("/__usernode/node_status", { cache: "no-store" });
@@ -1460,6 +1613,42 @@ async function pollChainReady() {
 // WASM/WS. By the time the engine finishes replay, the chain poll has
 // usually already hit `Synced` and the loader dismisses promptly.
 pollChainReady();
+
+// Global loader watchdog: the single backstop that guarantees the overlay
+// terminates (dismissed or showing an actionable error) no matter which
+// async path hung. Skipped entirely in mock/local-dev so the watchdog and
+// degraded banner never appear there.
+async function startLoaderWatchdog() {
+  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+    ? await window.usernode.isMockEnabled()
+    : false;
+  if (mockEnabled) return;
+
+  setTimeout(() => {
+    if (_loaderDismissed || _loaderErrored) return;
+    // Reassure without alarming — this is still the happy path, just slow.
+    if (_loaderStatus && !_engineLoaderReady) {
+      _loaderStatus.textContent = "Still working… taking longer than usual";
+    }
+  }, LOADER_SOFT_NOTICE_MS);
+
+  setTimeout(() => {
+    if (_loaderDismissed || _loaderErrored) return;
+    if (!_engineLoaderReady) {
+      // The simulation itself never came up (WASM stalled past its own
+      // timeout, or WS connected but no init arrived). Nothing to fall
+      // back to — surface a visible, recoverable error.
+      showLoaderError("Couldn't start the simulation. Check your connection and tap Retry.");
+      return;
+    }
+    // Engine is ready; only the chain gate is holding the loader. Drop into
+    // local-only mode so the user can draw, with a visible banner.
+    _chainLoaderReady = true;
+    enterDegradedMode();
+    tryDismissLoader();
+  }, LOADER_HARD_DEADLINE_MS);
+}
+startLoaderWatchdog();
 
 // =============================================================================
 // CONFIGURATION
@@ -2149,7 +2338,7 @@ void main() {
   else if (type == 24) { hue = 0.0; saturation = 0.0; lightness = 0.45 + d.g * 0.1; }
   else if (type == 25) { hue = 0.18; saturation = 0.7; lightness = 0.4 + d.g * 0.1; }
   else if (type == 26) { hue = 0.75; saturation = 0.5; lightness = 0.04 + d.g * 0.02; }
-  // Electricity & automation. d.g carries the cell's `ra` (cosmetic);
+  // Electricity & automation. d.g carries the cell's 'ra' (cosmetic);
   // for Wire it also tracks the refractory tail (rb), but ra dominates color.
   else if (type == 27) { hue = 0.12; saturation = 0.55; lightness = 0.32 + d.g * 0.18; }          // Wire: muted brass
   else if (type == 28) { hue = 0.15; saturation = 0.85; lightness = 0.85 + d.g * 0.15; }           // Spark: bright near-white-yellow
@@ -2785,11 +2974,25 @@ function startRound() {
       won = true;
       cleanup(sock);
       ws = sock;
-      lastWsActivityMs = Date.now();
+      const openedAtMs = Date.now();
+      lastWsActivityMs = openedAtMs;
       dbg(`R${rid}.${idx} connected`);
       if (canOverwriteStatus()) statusEl.className = "ok";
       try { sock.send(JSON.stringify({ type: "ready" })); }
       catch (e) { dbg(`send-ready err: ${e.message}`); }
+
+      // Bounded wait for the server's init/resync. If the socket opens but
+      // the server stays completely silent (no loading progress, no init),
+      // the engine flag never flips and the loader would sit at ≤45%.
+      // Surface that as a recoverable error rather than hanging. Guarded on
+      // "no inbound message since open" so a slow-but-progressing replay
+      // (which streams loading messages) is never falsely failed.
+      setTimeout(() => {
+        if (_loaderDismissed || _loaderErrored || _engineLoaderReady) return;
+        if (ws !== sock) return; // socket was replaced — let its own wait run
+        if (lastWsActivityMs > openedAtMs) return; // server is talking; keep waiting
+        showLoaderError("The server isn't responding. Tap Retry to reconnect.");
+      }, WS_INIT_WAIT_MS);
     };
 
     sock.onmessage = handleMessage;
@@ -2820,6 +3023,11 @@ function startRound() {
       dbg("Gave up after " + WS_MAX_ROUNDS + " rounds");
       statusEl.className = "err";
       statusEl.textContent = "Connection failed — tap to retry";
+      // If the loader is still up, the status bar is occluded by it — show
+      // the failure (with a working Retry) inside the overlay instead.
+      if (!_loaderDismissed && !_engineLoaderReady) {
+        showLoaderError("Couldn't connect to the server. Check your connection and tap Retry.");
+      }
       document.body.addEventListener("click", () => { wsRound = 0; startRound(); }, { once: true });
     }
   }, WS_ROUND_TIMEOUT));
@@ -2853,8 +3061,11 @@ function startRound() {
     statusEl.textContent = "Connecting...";
     scheduleConnect();
   } catch (e) {
-    setLoading(0, "Failed to load — tap to retry");
-    showError("WASM load failed: " + e.message);
+    // Surface inside the overlay (the #status bar is occluded by it) with a
+    // working Retry button instead of the old inert "tap to retry" text.
+    const detail = (e && e.message) ? e.message : String(e);
+    showLoaderError("Couldn't load the simulation engine: " + detail);
+    showError("WASM load failed: " + detail);
     console.error(e);
   }
 })();

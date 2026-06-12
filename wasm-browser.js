@@ -89,7 +89,8 @@ class Universe {
 
 // ── Load & instantiate ──────────────────────────────────────────────────────
 
-async function loadWasm(wasmUrl) {
+async function loadWasm(wasmUrl, opts) {
+  const timeoutMs = (opts && typeof opts.timeoutMs === "number") ? opts.timeoutMs : 20000;
   let wasm;
 
   const cachedTextDecoder = new TextDecoder("utf-8", {
@@ -147,17 +148,45 @@ async function loadWasm(wasmUrl) {
 
   const imports = { "./sandtable_bg.js": importProxy };
 
-  const resp = await fetch(wasmUrl);
-  if (!resp.ok) throw new Error(`Failed to fetch WASM: ${resp.status}`);
+  // Time-box the whole fetch + instantiation. Without this, a stalled
+  // CDN/proxy / half-open connection on flaky mobile networks leaves the
+  // `await` pending forever — it neither resolves nor rejects — and the
+  // caller's loader gate hangs with no error. An AbortController fires
+  // after `timeoutMs`; because instantiateStreaming consumes the Response
+  // body stream, aborting the underlying fetch rejects a stalled streaming
+  // instantiation too, and the same signal covers the arrayBuffer() read.
+  const controller = (typeof AbortController === "function") ? new AbortController() : null;
+  let timedOut = false;
+  const timer = setTimeout(function () {
+    timedOut = true;
+    if (controller) controller.abort();
+  }, timeoutMs);
+
+  function rethrow(err) {
+    if (timedOut) {
+      throw new Error("WASM load timed out after " + Math.round(timeoutMs / 1000) + "s");
+    }
+    throw err;
+  }
 
   let instance;
-  if (typeof WebAssembly.instantiateStreaming === "function") {
-    const result = await WebAssembly.instantiateStreaming(resp, imports);
-    instance = result.instance;
-  } else {
-    const bytes = await resp.arrayBuffer();
-    const result = await WebAssembly.instantiate(bytes, imports);
-    instance = result.instance;
+  try {
+    const fetchOpts = controller ? { signal: controller.signal } : undefined;
+    const resp = await fetch(wasmUrl, fetchOpts);
+    if (!resp.ok) throw new Error(`Failed to fetch WASM: ${resp.status}`);
+
+    if (typeof WebAssembly.instantiateStreaming === "function") {
+      const result = await WebAssembly.instantiateStreaming(resp, imports);
+      instance = result.instance;
+    } else {
+      const bytes = await resp.arrayBuffer();
+      const result = await WebAssembly.instantiate(bytes, imports);
+      instance = result.instance;
+    }
+  } catch (err) {
+    rethrow(err);
+  } finally {
+    clearTimeout(timer);
   }
 
   wasm = instance.exports;
