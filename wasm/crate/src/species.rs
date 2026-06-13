@@ -223,12 +223,13 @@ pub fn update_water(cell: Cell, mut api: SandApi) {
     if (heat == Species::Fire || heat == Species::Lava || heat == Species::Torch)
         && api.once_in(BOIL_ODDS)
     {
+        let ra = 120 + api.rand_int(60) as u8;
         api.set(
             0,
             0,
             Cell {
                 species: Species::Steam,
-                ra: 120 + api.rand_int(60) as u8,
+                ra,
                 rb: 0,
                 clock: 0,
             },
@@ -491,12 +492,13 @@ pub fn update_steam(cell: Cell, mut api: SandApi) {
 
     // 1. Condense by age: the life countdown (ra) has run out — rain back down.
     if cell.ra < STEAM_CONDENSE_RA {
+        let ra = 60 + api.rand_int(40) as u8;
         api.set(
             0,
             0,
             Cell {
                 species: Species::Water,
-                ra: 60 + api.rand_int(40) as u8,
+                ra,
                 rb: 0,
                 clock: 0,
             },
@@ -514,12 +516,13 @@ pub fn update_steam(cell: Cell, mut api: SandApi) {
         || nbr == Species::Wall)
         && api.once_in(STEAM_COOL_ODDS)
     {
+        let ra = 60 + api.rand_int(40) as u8;
         api.set(
             0,
             0,
             Cell {
                 species: Species::Water,
-                ra: 60 + api.rand_int(40) as u8,
+                ra,
                 rb: 0,
                 clock: 0,
             },
@@ -556,12 +559,13 @@ pub fn update_steam(cell: Cell, mut api: SandApi) {
     //    pinned long enough, condense so a cloud under a ceiling eventually
     //    rains instead of accumulating forever.
     if cell.rb >= STEAM_TRAPPED_MAX {
+        let ra = 60 + api.rand_int(40) as u8;
         api.set(
             0,
             0,
             Cell {
                 species: Species::Water,
-                ra: 60 + api.rand_int(40) as u8,
+                ra,
                 rb: 0,
                 clock: 0,
             },
