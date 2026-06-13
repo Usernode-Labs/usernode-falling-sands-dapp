@@ -140,6 +140,7 @@ const Species = Object.freeze({
   Spark: 28,
   Battery: 29,
   Switch: 30,
+  Steam: 32,
 });
 
 // ── Thin wrapper around the raw WASM exports ────────────────────────────────

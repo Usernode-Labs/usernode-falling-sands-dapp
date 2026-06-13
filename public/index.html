@@ -1753,6 +1753,7 @@ const SPECIES = [
   { id: 0,  name: "Erase", color: "#1e2736" },
   { id: 2,  name: "Sand",  color: "#c2b280" },
   { id: 3,  name: "Water", color: "#4a90d9" },
+  { id: 32, name: "Steam", color: "#cfe3f0" },
   { id: 13, name: "Stone", color: "#808080" },
   { id: 7,  name: "Wood",  color: "#8b6914" },
   { id: 11, name: "Plant", color: "#4caf50" },
@@ -2404,6 +2405,9 @@ void main() {
     saturation = 0.7 + bur * 0.2;
     lightness = 0.35 + d.b * 0.5;
   }
+  // Steam: pale blue-grey, translucent vapour. d.g (the ra life countdown)
+  // dims it slightly as it cools; alpha < 1 lets material show through.
+  else if (type == 32) { hue = 0.55; saturation = 0.08; lightness = 0.82 + d.g * 0.12; a = 0.7; }
 
   lightness *= (0.975 + snoise2(floor(uv * resolution / dpi)) * 0.025);
   gl_FragColor = vec4(hsv2rgb(vec3(hue, saturation, lightness)), a);

@@ -59,6 +59,7 @@ const Species = Object.freeze({
   Spark: 28,
   Battery: 29,
   Switch: 30,
+  Steam: 32,
 });
 
 // ── Universe wrapper ────────────────────────────────────────────────────────
