@@ -660,6 +660,163 @@
       background: var(--surface-2);
       border-radius: 50%;
     }
+    #leaderboard-btn {
+      font-size: var(--fs-md);
+      background: var(--surface-2);
+      border-radius: 50%;
+    }
+
+    /* ── Header score chip ───────────────────────────── */
+    #score-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      position: relative;
+      transition: transform 0.12s ease;
+    }
+    #score-chip:active { transform: scale(0.94); }
+    #score-chip .star { color: var(--accent-bright); }
+    #score-chip.bump { animation: score-bump 0.5s ease; }
+    @keyframes score-bump {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.22); }
+      100% { transform: scale(1); }
+    }
+    /* Floating "+N" that drifts up from the chip on a confirmed draw. */
+    .score-delta {
+      position: absolute;
+      left: 50%;
+      top: -2px;
+      transform: translateX(-50%);
+      color: var(--accent-bright);
+      font-family: var(--font-mono);
+      font-size: var(--fs-sm);
+      font-weight: 700;
+      pointer-events: none;
+      opacity: 0;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .score-delta.go { animation: score-float 1.1s ease-out forwards; }
+    }
+    @keyframes score-float {
+      0% { opacity: 0; transform: translate(-50%, 4px); }
+      20% { opacity: 1; }
+      100% { opacity: 0; transform: translate(-50%, -22px); }
+    }
+
+    /* ── Leaderboard overlay ─────────────────────────── */
+    #leaderboard-overlay { z-index: 250; }
+    #leaderboard-content {
+      padding: var(--sp-4) 22px 22px;
+      max-width: 420px;
+      width: 92%;
+      max-height: 82vh;
+      max-height: 82dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #leaderboard-content h2 {
+      margin: 0 0 4px;
+      font-size: var(--fs-lg);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    #lb-yours {
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin: 0 0 10px;
+      min-height: 16px;
+    }
+    #lb-yours strong { color: var(--accent); }
+    .lb-tabs {
+      display: flex;
+      gap: var(--sp-2);
+      margin-bottom: var(--sp-3);
+    }
+    .lb-tab {
+      flex: 1;
+      padding: 6px 0;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .lb-tab.active {
+      color: var(--bg, #0b0e14);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    #lb-list {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 0 -6px;
+      padding: 0 6px;
+    }
+    .lb-row {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      font-size: var(--fs-sm);
+    }
+    .lb-row + .lb-row { margin-top: 4px; }
+    .lb-row.me {
+      background: rgba(93, 211, 158, 0.12);
+      border: 1px solid rgba(93, 211, 158, 0.4);
+    }
+    .lb-rank {
+      width: 28px;
+      flex-shrink: 0;
+      text-align: right;
+      font-family: var(--font-mono);
+      color: var(--text-faint);
+      font-weight: 600;
+    }
+    .lb-rank.top { color: var(--accent-bright); }
+    .lb-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .lb-badges { font-size: var(--fs-sm); white-space: nowrap; letter-spacing: 1px; }
+    .lb-score {
+      flex-shrink: 0;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .lb-empty, .lb-loading {
+      text-align: center;
+      color: var(--text-faint);
+      padding: 28px 0;
+      font-size: var(--fs-sm);
+    }
+    .lb-pin {
+      margin-top: var(--sp-2);
+      padding-top: var(--sp-2);
+      border-top: 1px dashed var(--border);
+    }
 
     #info-overlay { z-index: 200; }
     #info-content {
@@ -1074,6 +1231,9 @@
       <span class="dot"></span>
       <span class="label">connecting</span>
     </span>
+    <span id="score-chip" role="button" tabindex="0" title="Your score — tap for the leaderboard">
+      <span class="star">★</span><span id="score-value">0</span>
+    </span>
     <span id="debug-hash"></span>
   </div>
 </header>
@@ -1088,6 +1248,7 @@
   <label id="brush-label">Brush</label>
   <input id="brush-size" type="range" min="1" max="15" value="4" />
   <span id="brush-value">4</span>
+  <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
   <!-- The .tb-right slot is always rendered so the toolbar layout
        doesn't snap when the user starts/finishes drawing, but its
@@ -1129,6 +1290,18 @@
       <button id="admin-reset-btn" type="button">Reset shared canvas</button>
       <div id="admin-reset-status"></div>
     </div>
+  </div>
+</div>
+
+<div id="leaderboard-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="leaderboard-title">
+  <div id="leaderboard-content" class="modal-surface">
+    <h2 id="leaderboard-title">Leaderboard</h2>
+    <p id="lb-yours"></p>
+    <div class="lb-tabs">
+      <button class="lb-tab active" id="lb-tab-all" type="button" data-scope="all">All-time</button>
+      <button class="lb-tab" id="lb-tab-daily" type="button" data-scope="daily">Today</button>
+    </div>
+    <div id="lb-list"><div class="lb-loading">Loading…</div></div>
   </div>
 </div>
 
@@ -3051,6 +3224,7 @@ function handleMessage(event) {
 
     } else if (msg.type === "tx") {
       addPendingTx(msg);
+      try { if (window.Leaderboard) window.Leaderboard.onTx(msg); } catch (_) {}
     }
   } catch (e) {
     console.warn("WS message parse error:", e);
@@ -3959,6 +4133,269 @@ window.addEventListener("touchend", (e) => {
       try { localStorage.setItem("sands:introDismissed", "1"); } catch (_) {}
     }
   });
+})();
+
+// ── Leaderboard + score chip ────────────────────────────────────────────────
+//
+// Reads the authoritative ranking from the public GET /__sands/leaderboard
+// endpoint (server scores deterministically from the on-chain draw stream),
+// then layers live deltas from incoming WS `tx` messages on top so the chip
+// and panel tick up without polling. Re-syncs against the endpoint on open
+// and tab switch to correct any drift. Usernames resolve client-side via the
+// shared UsernodeUsernames module (user_<last6> fallback).
+window.Leaderboard = (function () {
+  // Mirror of the server's scoring weights (lib/leaderboard-store.js).
+  const DRAW_BONUS = 50;
+
+  const chip = document.getElementById("score-chip");
+  const scoreValueEl = document.getElementById("score-value");
+  const overlay = document.getElementById("leaderboard-overlay");
+  const content = document.getElementById("leaderboard-content");
+  const listEl = document.getElementById("lb-list");
+  const yoursEl = document.getElementById("lb-yours");
+  const tabAll = document.getElementById("lb-tab-all");
+  const tabDaily = document.getElementById("lb-tab-daily");
+  const btnOpen = document.getElementById("leaderboard-btn");
+
+  let scope = "all";              // "all" | "daily"
+  let rows = [];                  // current scope's rows (server + live deltas)
+  let youRow = null;              // caller's row (may be off the top list)
+  let myAddr = null;
+  let myScore = 0;
+  let fetching = false;
+  let lastFetch = 0;
+
+  function fmt(n) {
+    return (n | 0).toLocaleString();
+  }
+
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  // Approximate per-draw points for a memo, mirroring the server's area
+  // math (len*r*2 + π*r², erase excluded, size/coords clamped). The species
+  // discovery bonus is omitted live (we can't know a player's full history
+  // from the WS tail) — the next re-sync makes the value exact.
+  function drawPoints(memo) {
+    if (!memo || memo.app !== "falling-sands" || memo.type !== "draw" || !Array.isArray(memo.s)) {
+      return null;
+    }
+    let area = 0;
+    for (const seg of memo.s) {
+      if (!Array.isArray(seg) || seg.length < 6) continue;
+      const sp = seg[5] | 0;
+      if (sp === 0) continue;
+      const r = clamp(seg[4] | 0, 1, 20);
+      const x1 = clamp(seg[0] | 0, 0, WIDTH - 1);
+      const y1 = clamp(seg[1] | 0, 0, HEIGHT - 1);
+      const x2 = clamp(seg[2] | 0, 0, WIDTH - 1);
+      const y2 = clamp(seg[3] | 0, 0, HEIGHT - 1);
+      const dx = x2 - x1, dy = y2 - y1;
+      area += Math.sqrt(dx * dx + dy * dy) * r * 2 + Math.PI * r * r;
+    }
+    return Math.round(area) + DRAW_BONUS;
+  }
+
+  function setChip(v, animateDelta) {
+    myScore = v;
+    if (scoreValueEl) scoreValueEl.textContent = fmt(v);
+    if (animateDelta && animateDelta > 0 && chip) {
+      chip.classList.remove("bump");
+      // force reflow so the animation restarts
+      void chip.offsetWidth;
+      chip.classList.add("bump");
+      const d = document.createElement("span");
+      d.className = "score-delta";
+      d.textContent = "+" + fmt(animateDelta);
+      chip.appendChild(d);
+      void d.offsetWidth;
+      d.classList.add("go");
+      setTimeout(() => { try { chip.removeChild(d); } catch (_) {} }, 1200);
+    }
+  }
+
+  function nameFor(pubkey) {
+    try {
+      if (window.UsernodeUsernames) return window.UsernodeUsernames.getUsernameSync(pubkey);
+    } catch (_) {}
+    return "user_" + (pubkey ? pubkey.slice(-6) : "??????");
+  }
+
+  function badgeIcons(badges) {
+    if (!Array.isArray(badges)) return "";
+    let out = "";
+    for (const b of badges) {
+      if (b === "collector") out += "🏆";
+      else if (b.indexOf("streak:") === 0) out += "🔥" + b.slice(7);
+      else if (b.indexOf("pixels:") === 0) {
+        const v = parseInt(b.slice(7), 10);
+        out += v >= 100000 ? "💎" : v >= 10000 ? "⭐" : "✨";
+      }
+    }
+    return out;
+  }
+
+  function rowHtml(r, isMe) {
+    const rankCls = r.rank <= 3 ? "lb-rank top" : "lb-rank";
+    const scoreField = scope === "daily" ? r.dailyPoints : r.score;
+    const name = nameFor(r.pubkey) + (isMe ? " (you)" : "");
+    return (
+      '<div class="lb-row' + (isMe ? " me" : "") + '">' +
+      '<span class="' + rankCls + '">' + r.rank + "</span>" +
+      '<span class="lb-name">' + escapeHtml(name) + "</span>" +
+      '<span class="lb-badges">' + badgeIcons(r.badges) + "</span>" +
+      '<span class="lb-score">' + fmt(scoreField) + "</span>" +
+      "</div>"
+    );
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  function render() {
+    if (!listEl) return;
+    if (!rows.length) {
+      listEl.innerHTML =
+        '<div class="lb-empty">' +
+        (scope === "daily" ? "No drawings yet today — be the first!" : "No scores yet. Draw something!") +
+        "</div>";
+    } else {
+      let html = "";
+      for (const r of rows) html += rowHtml(r, myAddr && r.pubkey === myAddr);
+      // Pin "you" below the list if outside the visible top set.
+      if (youRow && !rows.some((r) => r.pubkey === youRow.pubkey)) {
+        html += '<div class="lb-pin">' + rowHtml(youRow, true) + "</div>";
+      }
+      listEl.innerHTML = html;
+    }
+
+    if (yoursEl) {
+      if (youRow) {
+        const f = scope === "daily" ? youRow.dailyPoints : youRow.score;
+        yoursEl.innerHTML =
+          "You're <strong>#" + youRow.rank + "</strong> with <strong>" +
+          fmt(f) + "</strong> " + (scope === "daily" ? "points today" : "points") + ".";
+      } else if (myAddr) {
+        yoursEl.textContent = "Draw something to get on the board!";
+      } else {
+        yoursEl.textContent = "";
+      }
+    }
+  }
+
+  async function refresh() {
+    if (fetching) return;
+    fetching = true;
+    try {
+      if (!myAddr) {
+        try { myAddr = await getMyAddressCached(); } catch (_) {}
+      }
+      const q = "/__sands/leaderboard?scope=" + scope +
+        (myAddr ? "&me=" + encodeURIComponent(myAddr) : "");
+      const resp = await fetch(q, { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      rows = Array.isArray(data.top) ? data.top : [];
+      youRow = data.you || null;
+      lastFetch = Date.now();
+      if (youRow) setChip(youRow.score);
+      // Warm username cache so names aren't all fallbacks on first paint.
+      try {
+        if (window.UsernodeUsernames && window.UsernodeUsernames.refresh) {
+          window.UsernodeUsernames.refresh().then(render).catch(() => {});
+        }
+      } catch (_) {}
+      render();
+    } catch (e) {
+      if (listEl && !rows.length) {
+        listEl.innerHTML = '<div class="lb-empty">Leaderboard unavailable.</div>';
+      }
+    } finally {
+      fetching = false;
+    }
+  }
+
+  function open() {
+    overlay.classList.add("open");
+    refresh();
+  }
+  function close() { overlay.classList.remove("open"); }
+
+  function setScope(s) {
+    if (s === scope) return;
+    scope = s;
+    tabAll.classList.toggle("active", scope === "all");
+    tabDaily.classList.toggle("active", scope === "daily");
+    rows = [];
+    listEl.innerHTML = '<div class="lb-loading">Loading…</div>';
+    refresh();
+  }
+
+  // Live delta from an incoming WS draw tx.
+  function onTx(tx) {
+    if (!tx || !tx.memo) return;
+    const pd = drawPoints(tx.memo);
+    if (pd == null) return; // not a draw
+    const from = tx.from;
+    if (!from || from === "unknown" || from === "chain") return;
+    const isMe = myAddr && from === myAddr;
+
+    // Chip: optimistic bump for our own confirmed draw, then re-sync for the
+    // exact value (the server applies species/streak bonuses we skip live).
+    if (isMe) {
+      setChip(myScore + pd, pd);
+      setTimeout(refresh, 6000);
+    }
+
+    // Panel (only worth updating when open): merge the delta into the row.
+    if (!overlay.classList.contains("open")) return;
+    let row = rows.find((r) => r.pubkey === from);
+    if (!row && youRow && youRow.pubkey === from) row = youRow;
+    if (row) {
+      row.score += pd;
+      row.dailyPoints = (row.dailyPoints || 0) + pd;
+      row.draws = (row.draws || 0) + 1;
+    } else {
+      const nr = {
+        pubkey: from, score: pd, dailyPoints: pd, pixels: 0, draws: 1,
+        species: 0, streakDays: 0, bestStreak: 0, badges: [], rank: 0,
+      };
+      rows.push(nr);
+      if (isMe) youRow = nr;
+    }
+    // Re-sort + re-rank for the active scope.
+    const key = scope === "daily" ? "dailyPoints" : "score";
+    rows.sort((a, b) => b[key] - a[key] || b.score - a.score);
+    rows.forEach((r, i) => { r.rank = i + 1; });
+    if (youRow) {
+      const found = rows.find((r) => r.pubkey === youRow.pubkey);
+      if (found) youRow = found;
+    }
+    render();
+  }
+
+  // Wire controls.
+  if (btnOpen) btnOpen.addEventListener("click", open);
+  if (chip) {
+    chip.addEventListener("click", open);
+    chip.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+    });
+  }
+  if (overlay) {
+    overlay.addEventListener("click", (e) => { if (!content.contains(e.target)) close(); });
+  }
+  if (tabAll) tabAll.addEventListener("click", () => setScope("all"));
+  if (tabDaily) tabDaily.addEventListener("click", () => setScope("daily"));
+
+  // Prime the chip once the address + a first ranking are available. Runs
+  // shortly after load so the WS/bridge have a chance to come up; harmless
+  // if it 503s early (the next open() refreshes).
+  setTimeout(() => { refresh(); }, 1500);
+
+  return { onTx, refresh, open };
 })();
 
 // ── Admin reset ─────────────────────────────────────────────────────────────
