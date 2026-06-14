@@ -39,7 +39,6 @@ const fs = require("fs");
 const http = require("http");
 const crypto = require("crypto");
 const express = require("express");
-const compression = require("compression");
 
 const {
   loadEnvFile,
@@ -85,23 +84,6 @@ if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true }
 // ── Express app ──────────────────────────────────────────────────────────────
 const app = express();
 app.set("trust proxy", 1);
-
-// ── Response compression ─────────────────────────────────────────────────────
-// gzip/brotli for text responses (index.html ~124 KB → ~25 KB, plus the
-// loader/usernames/wasm-browser JS). Registered first so every downstream
-// route — static assets, the HTML shell, the versioned JS bundles — is
-// compressed. The WASM binary is explicitly excluded: it's served with a
-// long immutable cache and gzipping it just burns CPU for little gain on
-// an already-compact module (and would interact awkwardly with the
-// immutable cache). Everything else falls through to compression's default
-// content-type filter.
-app.use(compression({
-  filter(req, res) {
-    const type = res.getHeader("Content-Type");
-    if (typeof type === "string" && type.includes("application/wasm")) return false;
-    return compression.filter(req, res);
-  },
-}));
 
 // SV's waitForHealthy probe hits /health.
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
@@ -310,47 +292,35 @@ app.use((req, res, next) => {
   next();
 });
 
-// ── Versioned, immutable long-cache assets ───────────────────────────────────
-// The WASM module and the self-hosted regl/pako bundles are served at
-// content-versioned URLs whose version segment is templated into index.html
-// (see renderIndexHtml below). Because the URL changes whenever the asset
-// changes, we serve with a 1-year immutable cache instead of forcing a
-// revalidation round-trip on every load:
-//
-//   - WASM:  /sandtable_bg.<wasmVersion>.wasm — wasmVersion is a content
-//            hash of the binary, so a rebuilt module ships a new URL. This
-//            preserves the original anti-drift guarantee (a stale cached
-//            module can never silently diverge the client physics from the
-//            server's after a deploy) while letting unchanged builds load
-//            from cache with zero network round-trip.
-//   - regl / pako:  /<name>.<buildVersion>.min.js — buildVersion already
-//            hashes every file in public/, so editing a bundle busts the URL.
-//
-// The route regexes accept any version segment and always serve the current
-// on-disk file, so a request for a now-stale URL (e.g. from a client loaded
-// just before a deploy) transparently returns the live asset.
+// ── WASM binary ──────────────────────────────────────────────────────────────
+// ETag-revalidated on every load so a stale browser-cached module can't
+// silently drift the client physics away from the server's after a
+// deploy. Same fix as in upstream examples/falling-sands/server.js.
 const WASM_PATH = path.join(__dirname, "sandspiel", "crate", "pkg", "sandtable_bg.wasm");
-const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
 
-function sendImmutableFile(res, filePath, contentType) {
-  let buf;
+app.get("/sandtable_bg.wasm", (req, res) => {
+  let stat;
   try {
-    buf = fs.readFileSync(filePath);
+    stat = fs.statSync(WASM_PATH);
   } catch (e) {
-    return res.status(500).type("text/plain").send("Failed to read asset: " + e.message);
+    return res.status(500).type("text/plain").send("Failed to read WASM: " + e.message);
   }
-  res.set({ "Content-Type": contentType, "Cache-Control": IMMUTABLE_CACHE });
-  res.end(buf);
-}
-
-app.get(/^\/sandtable_bg\.[0-9a-z.-]+\.wasm$/, (_req, res) => {
-  sendImmutableFile(res, WASM_PATH, "application/wasm");
-});
-app.get(/^\/regl\.[0-9a-z.-]+\.min\.js$/, (_req, res) => {
-  sendImmutableFile(res, path.join(__dirname, "public", "regl.min.js"), "application/javascript; charset=utf-8");
-});
-app.get(/^\/pako\.[0-9a-z.-]+\.min\.js$/, (_req, res) => {
-  sendImmutableFile(res, path.join(__dirname, "public", "pako.min.js"), "application/javascript; charset=utf-8");
+  const etag = `"${stat.size.toString(16)}-${stat.mtimeMs.toString(36)}"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.set({ ETag: etag, "Cache-Control": "no-cache" });
+    return res.status(304).end();
+  }
+  try {
+    const buf = fs.readFileSync(WASM_PATH);
+    res.set({
+      "Content-Type": "application/wasm",
+      "Cache-Control": "no-cache",
+      ETag: etag,
+    });
+    res.end(buf);
+  } catch (e) {
+    res.status(500).type("text/plain").send("Failed to read WASM: " + e.message);
+  }
 });
 
 // ── Build version ────────────────────────────────────────────────────────────
@@ -375,23 +345,6 @@ function getBuildVersion() {
   return LOCAL_DEV ? computeBuildVersion() : STARTUP_BUILD_VERSION;
 }
 console.log(`  Build version: ${STARTUP_BUILD_VERSION}`);
-
-// Content hash of the WASM binary, used to version its immutable URL. Kept
-// separate from the public/ build version because the WASM lives outside
-// public/ — a simulation rebuild changes this hash (busting the cache and
-// preserving the anti-drift guarantee) without necessarily touching any
-// public/ file.
-function computeWasmVersion() {
-  try {
-    return crypto.createHash("sha1").update(fs.readFileSync(WASM_PATH)).digest("hex").slice(0, 12);
-  } catch (_) {
-    return "0";
-  }
-}
-const STARTUP_WASM_VERSION = computeWasmVersion();
-function getWasmVersion() {
-  return LOCAL_DEV ? computeWasmVersion() : STARTUP_WASM_VERSION;
-}
 
 app.get("/__build", (_req, res) => {
   res.set("Cache-Control", "no-store");
@@ -469,9 +422,7 @@ function renderIndexHtml() {
     } catch (e) {
       return `<!doctype html><pre>Failed to read index.html: ${e.message}</pre>`;
     }
-    _indexHtmlCache = raw
-      .split("__BUILD_VERSION__").join(version)
-      .split("__WASM_VERSION__").join(getWasmVersion());
+    _indexHtmlCache = raw.split("__BUILD_VERSION__").join(version);
     _indexHtmlVersion = version;
   }
   return _indexHtmlCache;
