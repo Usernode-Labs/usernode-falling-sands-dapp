@@ -1191,14 +1191,9 @@
      cache state naturally. -->
 <script src="https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js"></script>
 <script src="/usernode-usernames.js"></script>
-<!-- regl + pako are self-hosted (same-origin) rather than pulled from a
-     CDN: it removes two cross-origin DNS/TLS round trips from the critical
-     path, drops a redundant double-download of regl, and lets us serve them
-     gzip-compressed with a 1-year immutable cache. The version segment is
-     templated server-side (renderIndexHtml) so a redeploy that changes the
-     bundle busts the cache. -->
-<script src="/regl.__BUILD_VERSION__.min.js"></script>
-<script src="/pako.__BUILD_VERSION__.min.js"></script>
+<script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 <script src="/wasm-browser.js"></script>
 
 <script>
@@ -1463,51 +1458,15 @@ if (_degradedBannerClose && _degradedBanner) {
   _degradedBannerClose.addEventListener("click", () => { _degradedBanner.hidden = true; });
 }
 
-// P5 — bounded chain gate. Once the engine side is ready (snapshot loaded,
-// sim caught up) the canvas is already interactive: the user can draw locally
-// and their strokes still go on-chain. We therefore don't hold the overlay
-// indefinitely on a slow-but-not-broken node. If the chain side of the gate
-// hasn't flipped within this window after engine-ready, dismiss the overlay
-// anyway and let the persistent status-bar indicators (#ws-indicator,
-// #status) carry the node-syncing state from there on. A genuine outage
-// still gets surfaced — just in the status bar instead of a blocking overlay.
-const LOADER_CHAIN_GATE_TIMEOUT_MS = 6000;
-let _chainGateFallbackTimer = null;
-
-function _hideLoaderOverlay() {
-  if (_loaderOverlay) {
-    _loaderOverlay.classList.add("fade-out");
-    setTimeout(() => { _loaderOverlay.style.display = "none"; }, 500);
-  }
-}
-
 function tryDismissLoader() {
   if (_loaderDismissed) return;
   if (!_engineLoaderReady || !_chainLoaderReady) return;
   _loaderDismissed = true;
-  if (_chainGateFallbackTimer) { clearTimeout(_chainGateFallbackTimer); _chainGateFallbackTimer = null; }
   setLoading(100, "Ready!");
-  _hideLoaderOverlay();
-}
-
-// Called from finalizeInit once the engine is ready. If the chain gate is
-// still open, arm a one-shot fallback that dismisses the overlay after the
-// timeout so a lagging node can't strand the user behind a finished-looking
-// canvas. No-op if the chain side is already (or becomes) ready first — in
-// that case tryDismissLoader() does the normal dismissal and clears the timer.
-function markEngineReadyForLoaderGate() {
-  if (_loaderDismissed || _chainLoaderReady) return;
-  if (_chainGateFallbackTimer) return;
-  _chainGateFallbackTimer = setTimeout(() => {
-    _chainGateFallbackTimer = null;
-    if (_loaderDismissed || _chainLoaderReady || !_engineLoaderReady) return;
-    console.warn(`[sands-loader] chain gate still open ${LOADER_CHAIN_GATE_TIMEOUT_MS}ms after engine ready — dismissing overlay; node-sync state remains in the status bar`);
-    _loaderDismissed = true;
-    // Not "Ready!" — the node is still catching up; the status bar carries
-    // that detail now (the ws-indicator / #status keep updating live).
-    setLoading(100, "Ready");
-    _hideLoaderOverlay();
-  }, LOADER_CHAIN_GATE_TIMEOUT_MS);
+  if (_loaderOverlay) {
+    _loaderOverlay.classList.add("fade-out");
+    setTimeout(() => { _loaderOverlay.style.display = "none"; }, 500);
+  }
 }
 
 function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -2638,65 +2597,6 @@ function fastForwardTo(targetTick) {
   }
 }
 
-// Catch-up gaps at or below this run synchronously — a few hundred ticks
-// complete well within a single frame, so the yield machinery would only
-// add overhead. Larger gaps go through fastForwardToChunked().
-const FF_SYNC_THRESHOLD = 300;
-// Wall-clock budget for one chunk before yielding to the event loop. Kept
-// under a frame so the renderer can paint and the loader bar can update
-// between batches.
-const FF_SLICE_MS = 12;
-
-// Time-sliced fast-forward used on the init path for large catch-up gaps.
-// The per-tick work — applying pendingTxs in tick order, universe.tick(),
-// and checkpointing — is byte-for-byte identical to fastForwardTo(); the
-// ONLY difference is that we yield to the event loop (via requestAnimationFrame)
-// between batches instead of blocking the main thread in one synchronous
-// while-loop. Determinism is preserved: the sequence of tx applications and
-// ticks is exactly the same regardless of where the batch boundaries fall.
-// onProgress(fraction) is called between batches (0..1); onDone() fires once
-// simTick reaches targetTick.
-function fastForwardToChunked(targetTick, onProgress, onDone) {
-  if (!universe) { onDone(); return; }
-  const startTick = simTick;
-  const total = Math.max(1, targetTick - startTick);
-
-  function pushFrameToGpu() {
-    // Mirror simTick30Hz's buffer copy so the canvas animates through the
-    // catch-up instead of jumping from the snapshot to the caught-up state.
-    const cells = new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE);
-    cellData.set(cells);
-  }
-
-  function runSlice() {
-    const sliceStart = performance.now();
-    while (simTick < targetTick) {
-      while (pendingTxs.length > 0 && pendingTxs[0].tick <= simTick) {
-        const tx = pendingTxs.shift();
-        if (tx.memo) applyDrawMemo(tx.memo);
-      }
-      universe.tick();
-      simTick++;
-
-      if (simTick - lastCheckpointTick >= CHECKPOINT_INTERVAL_TICKS) {
-        saveCheckpoint();
-      }
-      if (performance.now() - sliceStart >= FF_SLICE_MS) break;
-    }
-
-    pushFrameToGpu();
-
-    if (simTick < targetTick) {
-      if (onProgress) onProgress((simTick - startTick) / total);
-      requestAnimationFrame(runSlice);
-    } else {
-      onDone();
-    }
-  }
-
-  runSlice();
-}
-
 // ── Simulation tick (called at 30Hz) ────────────────────────────────────────
 
 function simTick30Hz() {
@@ -2932,69 +2832,43 @@ function handleMessage(event) {
       // runs speculative local physics at 30Hz (the tick loop handles this).
       clientActiveUntilTick = msg.activeUntilTick || simTick;
 
-      // Everything after catch-up completes: flip the engine side of the
-      // loader gate, start the live 30Hz sim loop, surface the intro. Pulled
-      // into a closure so it runs either synchronously (small catch-up) or as
-      // the completion callback of the time-sliced fast-forward (large
-      // catch-up) — in both cases _engineLoaderReady and simInterval are set
-      // only ONCE the sim has actually caught up.
-      const finalizeInit = () => {
-        console.log(`[sands-init] ready at tick ${simTick}, frozen=${!!msg.frozen}, activeUntil=${clientActiveUntilTick}`);
-
-        statusEl.className = "ok";
-        statusEl.textContent = "Running locally";
-        // Engine side of the loader gate is satisfied. If the chain side
-        // (pollChainReady) has also flipped, this dismisses the overlay
-        // immediately; otherwise the chain poller takes over the loader text
-        // and dismisses once Synced + sands stream is up (or the bounded
-        // fallback armed just below by markEngineReadyForLoaderGate fires).
-        _engineLoaderReady = true;
-        markEngineReadyForLoaderGate();
-        if (_chainLoaderReady) {
-          setLoading(100, "Ready!");
-        } else {
-          setLoading(80, "Waiting for node…");
-        }
-        tryDismissLoader();
-
-        if (!localStorage.getItem("sands:introDismissed")) {
-          setTimeout(() => {
-            const ov = document.getElementById("info-overlay");
-            if (ov) ov.classList.add("open");
-          }, 600);
-        }
-
-        if (simInterval) clearInterval(simInterval);
-        simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
-      };
-
       // Fast-forward behind the loading bar up to wall-clock time (capped
       // at the server's window end — beyond that we go live at 30Hz).
       {
         const wallTick = timestampToTick(Date.now());
         const targetTick = msg.frozen ? simTick : Math.min(wallTick, clientActiveUntilTick);
-        const gap = targetTick - simTick;
-
-        if (gap > FF_SYNC_THRESHOLD) {
-          // Large catch-up: time-slice it so the main thread stays
-          // responsive and the loader animates instead of freezing. The
-          // engine-ready flip + live sim loop only happen once it completes.
+        if (targetTick > simTick) {
           setLoading(70, "Catching up...");
-          console.log(`[sands-init] fast-forwarding ${gap} ticks to catch up (time-sliced)`);
-          fastForwardToChunked(
-            targetTick,
-            (frac) => setLoading(70 + Math.floor(frac * 8), `Catching up... ${Math.floor(frac * 100)}%`),
-            finalizeInit
-          );
-        } else {
-          if (gap > 0) {
-            setLoading(70, "Catching up...");
-            console.log(`[sands-init] fast-forwarding ${gap} ticks to catch up`);
-            fastForwardTo(targetTick);
-          }
-          finalizeInit();
+          console.log(`[sands-init] fast-forwarding ${targetTick - simTick} ticks to catch up`);
+          fastForwardTo(targetTick);
         }
       }
+
+      console.log(`[sands-init] ready at tick ${simTick}, frozen=${!!msg.frozen}, activeUntil=${clientActiveUntilTick}`);
+
+      statusEl.className = "ok";
+      statusEl.textContent = "Running locally";
+      // Engine side of the loader gate is satisfied. If the chain side
+      // (pollChainReady) has also flipped, this dismisses the overlay
+      // immediately; otherwise the chain poller takes over the loader
+      // text and dismisses once Synced + sands stream is up.
+      _engineLoaderReady = true;
+      if (_chainLoaderReady) {
+        setLoading(100, "Ready!");
+      } else {
+        setLoading(80, "Waiting for node\u2026");
+      }
+      tryDismissLoader();
+
+      if (!localStorage.getItem("sands:introDismissed")) {
+        setTimeout(() => {
+          const ov = document.getElementById("info-overlay");
+          if (ov) ov.classList.add("open");
+        }, 600);
+      }
+
+      if (simInterval) clearInterval(simInterval);
+      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
 
     } else if (msg.type === "resync") {
       // Error-recovery fallback: reload snapshot and restart simulation.
@@ -3167,7 +3041,7 @@ function startRound() {
   try {
     setLoading(10, "Loading simulation engine...");
     statusEl.textContent = "Loading WASM...";
-    const wasm = await window.loadSandspielWasm("/sandtable_bg.__WASM_VERSION__.wasm");
+    const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
     universe = wasm.Universe.new(WIDTH, HEIGHT);
     wasmMemory = wasm.memory;
     wasmPrng = wasm.prng || null;
