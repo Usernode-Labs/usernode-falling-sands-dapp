@@ -399,7 +399,14 @@ console.log(`  Build version: ${STARTUP_BUILD_VERSION}`);
 
 app.get("/__build", (_req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ version: getBuildVersion(), localDev: LOCAL_DEV });
+  // `staging` lets the client enable the dev-only ?loaderTest= forcing hook
+  // on the per-PR staging preview (which runs in production mode, not mock),
+  // so loader failure states can be exercised there. Never true in prod.
+  res.json({
+    version: getBuildVersion(),
+    localDev: LOCAL_DEV,
+    staging: process.env.USERNODE_ENV === "staging",
+  });
 });
 
 // ── Aggregated dapp-server status ───────────────────────────────────────────

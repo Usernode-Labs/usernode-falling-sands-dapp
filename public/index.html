@@ -1134,6 +1134,61 @@
       cursor: pointer;
     }
     #loading-overlay .loader-retry-btn:active { transform: translateY(1px); }
+    #loading-overlay .loader-error-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+      justify-content: center;
+    }
+    #loading-overlay .loader-offline-btn {
+      font-family: var(--font-ui);
+      font-size: var(--fs-md);
+      font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 22px;
+      cursor: pointer;
+    }
+    #loading-overlay .loader-offline-btn[hidden] { display: none; }
+    #loading-overlay .loader-offline-btn:active { transform: translateY(1px); }
+    /* Copyable error code — mirrors the sign-in error card's codebox so a
+       stuck-on-loading report carries one stable, pasteable identifier. */
+    #loading-overlay .loader-error-codebox {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+    #loading-overlay .loader-error-codebox[hidden] { display: none; }
+    #loading-overlay .loader-error-codebox .lec-label {
+      font-size: var(--fs-xs);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      opacity: 0.6;
+    }
+    #loading-overlay .loader-error-codebox .lec-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-sm);
+      user-select: all;
+      -webkit-user-select: all;
+    }
+    #loading-overlay .loader-error-codebox .lec-copy {
+      font-family: var(--font-ui);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+    }
+    #loading-overlay .loader-error-codebox .lec-copy:active { transform: translateY(1px); }
     /* Non-blocking degraded-mode banner. Shown when the chain gate times
        out but the engine is ready, so the user can keep drawing locally. */
     #degraded-banner {
@@ -1179,7 +1234,15 @@
   <div class="loader-status" id="loader-status">Loading...</div>
   <div class="loader-error" id="loader-error" hidden>
     <div class="loader-error-msg" id="loader-error-msg"></div>
-    <button type="button" class="loader-retry-btn" id="loader-retry-btn">Retry</button>
+    <div class="loader-error-codebox" id="loader-error-codebox" hidden>
+      <span class="lec-label">Code</span>
+      <code class="lec-code" id="loader-error-code">—</code>
+      <button type="button" class="lec-copy" id="loader-error-copy">Copy</button>
+    </div>
+    <div class="loader-error-actions">
+      <button type="button" class="loader-retry-btn" id="loader-retry-btn">Retry</button>
+      <button type="button" class="loader-offline-btn" id="loader-offline-btn" hidden>Play offline</button>
+    </div>
   </div>
 </div>
 
@@ -1482,19 +1545,21 @@ const _aeCopyEl  = document.getElementById("ae-copy");
 const _aeDismiss = document.getElementById("ae-dismiss");
 let _aeClipboard = "";
 
-async function _aeCopy() {
+// Shared clipboard write: prefers the async Clipboard API, falls back to a
+// hidden-textarea execCommand for non-secure contexts / older WebViews.
+// Used by both the sign-in error card and the loader error card.
+async function copyTextToClipboard(text) {
   let ok = false;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(_aeClipboard);
+      await navigator.clipboard.writeText(text);
       ok = true;
     }
   } catch (_) { /* fall through to legacy path */ }
   if (!ok) {
-    // execCommand fallback for non-secure contexts / older WebViews.
     try {
       const ta = document.createElement("textarea");
-      ta.value = _aeClipboard;
+      ta.value = text;
       ta.setAttribute("readonly", "");
       ta.style.position = "fixed";
       ta.style.opacity = "0";
@@ -1504,6 +1569,11 @@ async function _aeCopy() {
       document.body.removeChild(ta);
     } catch (_) { ok = false; }
   }
+  return ok;
+}
+
+async function _aeCopy() {
+  const ok = await copyTextToClipboard(_aeClipboard);
   if (_aeCopyEl) {
     _aeCopyEl.classList.toggle("copied", ok);
     _aeCopyEl.textContent = ok ? "Copied" : "Copy failed";
@@ -1577,6 +1647,13 @@ let _loaderErrored = false;
 // outcome so the user is never stranded behind a silent hang.
 const LOADER_SOFT_NOTICE_MS = 15000;
 const LOADER_HARD_DEADLINE_MS = 30000;
+// Terminal error fires only when startup has genuinely STALLED — no
+// forward progress for this long — rather than at a fixed wall-clock
+// mark. A healthy cold boot replays for "minutes of compute on first
+// paint" (see CLAUDE.md) while the server streams `loading` progress the
+// whole time; a wall-clock deadline wrongly calls that a connection
+// error. Decoupling "slow" from "broken" is the core of this fix.
+const LOADER_STALL_MS = 20000;
 // Bound the wait for the WS `init`/`resync` message after a socket
 // reaches OPEN. Past this the engine flag still hasn't flipped, so we
 // let the watchdog surface it rather than sitting silently at ≤45%.
@@ -1585,18 +1662,197 @@ const WS_INIT_WAIT_MS = 8000;
 const _loaderError = document.getElementById("loader-error");
 const _loaderErrorMsg = document.getElementById("loader-error-msg");
 const _loaderRetryBtn = document.getElementById("loader-retry-btn");
+const _loaderOfflineBtn = document.getElementById("loader-offline-btn");
+const _loaderErrorCodebox = document.getElementById("loader-error-codebox");
+const _loaderErrorCode = document.getElementById("loader-error-code");
+const _loaderErrorCopy = document.getElementById("loader-error-copy");
 const _loaderTrackEl = _loaderOverlay ? _loaderOverlay.querySelector(".loader-track") : null;
+
+// ── Stall detection ──────────────────────────────────────────────────────
+// Last moment we saw FORWARD progress on the engine side of the gate.
+// Updated on every real advance (WASM milestone, WS open, a `loading`
+// message whose progress strictly increased, `init` receipt). The
+// watchdog only declares a terminal error when this goes stale — so a
+// slow-but-progressing replay is never falsely failed.
+let _lastEngineProgressMs = Date.now();
+// Highest server `loading.progress` seen so far. Only a strictly greater
+// value counts as progress — a stream stuck at the same value still trips
+// the stall detector (also closes the WS_INIT_WAIT_MS blind spot where any
+// inbound message, even a frozen-progress one, suppressed the timeout).
+let _lastWsLoadingProgress = -1;
+// Last node_status snapshot observed by pollChainReady, cached so
+// deriveLoadError can name the actual cause (block X/Y, explorer hosts).
+let _lastNodeStatusSnap = null;
+
+function markEngineProgress() { _lastEngineProgressMs = Date.now(); }
+
+// Coarse boot stage, used to name the phase if startup stalls before the
+// engine is ready: 'wasm' (loading the sim) → 'ws' (opening the socket) →
+// 'replay' (server is streaming preparation progress).
+let _bootStage = "wasm";
+// Set by the soft-notice timer so the progress text can add a calm
+// "first load can take a few minutes" reassurance while still progressing.
+let _loaderSlow = false;
+// Dev-only: when a ?loaderTest= state is forced, suppress the normal
+// dismissal so the forced error card stays on screen for inspection.
+let _loaderTestForce = false;
+
+// Pick the most accurate phase for a stall that happened before the engine
+// came up. A hard chain-down cause (explorer unreachable on a fresh boot,
+// or a node that has never synced) is more informative than the generic
+// engine-side stage, so it wins when the cached snapshot shows it.
+function pickStallPhase() {
+  const snap = _lastNodeStatusSnap;
+  if (snap) {
+    const ex = snap.explorer;
+    const exDown = ex && (ex.status === "unreachable" || ex.status === "bad_response")
+      && snap.explorerHasBeenOk !== true;
+    if (exDown) return "EXPLORER";
+    if (!snap.hasBeenSynced &&
+        (snap.status === "Syncing" || snap.status === "Connecting" || snap.status === "Connected")) {
+      return "NODE";
+    }
+  }
+  if (_bootStage === "wasm") return "WASM";
+  if (_bootStage === "replay") return "REPLAY";
+  return "WS";
+}
+
+// Human-readable copy + stable code segment, keyed by loader phase. Mirrors
+// AUTH_ERR_REASONS so a stuck-on-loading report carries one pasteable code.
+const LOAD_ERR_PHASES = {
+  WASM: {
+    seg: "WASM",
+    message: "The game engine couldn't load. Tap Retry to reload.",
+  },
+  WS: {
+    seg: "WS",
+    message: "Couldn't reach the game server. Check your connection and tap Retry.",
+  },
+  REPLAY: {
+    seg: "REPLAY",
+    message: "The server is still preparing the canvas and has stopped responding. Tap Retry to reconnect.",
+  },
+  NODE: {
+    seg: "NODE",
+    message: "The network node is still syncing. You can keep waiting or play offline.",
+  },
+  EXPLORER: {
+    seg: "EXPLORER",
+    message: "The chain explorer is unreachable. You can keep waiting or play offline.",
+  },
+  UNKNOWN: {
+    seg: "UNKNOWN",
+    message: "Loading didn't complete. Tap Retry to reload.",
+  },
+};
+
+// Derive a stable {code, message, clipboard, allowOffline} from a loader
+// phase + an optional detail string. Pure function of its inputs and the
+// last-observed node_status snapshot (modulo the embedded timestamp).
+function deriveLoadError(phase, detail) {
+  const p = LOAD_ERR_PHASES[phase] || LOAD_ERR_PHASES.UNKNOWN;
+  const code = "SND-LOAD-" + p.seg;
+  let message = p.message;
+
+  // Pull cause specifics out of the cached node_status for NODE/EXPLORER.
+  const snap = _lastNodeStatusSnap;
+  let detailLine = detail || "";
+  if (!detailLine && snap) {
+    if (phase === "NODE") {
+      const our = typeof snap.bestTipHeight === "number" ? snap.bestTipHeight : null;
+      const peer = typeof snap.peerBestTipHeight === "number" ? snap.peerBestTipHeight : null;
+      if (our != null && peer != null && peer > 0) {
+        detailLine = "block " + our.toLocaleString() + " / " + peer.toLocaleString();
+        message = "The network node is still syncing (block " + our.toLocaleString()
+          + " / " + peer.toLocaleString() + "). You can keep waiting or play offline.";
+      } else if (snap.status) {
+        detailLine = "node status: " + snap.status;
+      }
+    } else if (phase === "EXPLORER") {
+      const ex = snap.explorer || null;
+      let hosts = "";
+      if (ex && Array.isArray(ex.hosts) && ex.hosts.length) {
+        hosts = ex.hosts.map((h) => h && h.host).filter(Boolean).join(", ");
+      } else if (ex && ex.host) {
+        hosts = String(ex.host);
+      }
+      if (hosts) {
+        detailLine = hosts;
+        message = "The chain explorer is unreachable (" + hosts
+          + "). You can keep waiting or play offline.";
+      }
+    }
+  }
+
+  // Offline play is only meaningful when there's a local snapshot to draw
+  // against: the chain-dependent phases, or any phase where the engine is
+  // already up and only the chain gate is holding the overlay.
+  const allowOffline = phase === "NODE" || phase === "EXPLORER" || _engineLoaderReady === true;
+
+  const lines = [
+    "Falling Sands — loading error",
+    "Code: " + code,
+    "Phase: " + p.seg,
+  ];
+  if (detailLine) lines.push("Detail: " + detailLine);
+  if (snap && snap.status) lines.push("Node: " + snap.status);
+  if (typeof APP_PUBKEY === "string" && APP_PUBKEY) lines.push("App: " + APP_PUBKEY);
+  try { lines.push("Time: " + new Date().toISOString()); } catch (_) {}
+  const clipboard = lines.join("\n");
+
+  return { code, message, clipboard, allowOffline };
+}
 
 // Surface a terminal, copyable error inside the overlay itself. The
 // #status bar is painted behind this opaque overlay (z-index 500), so an
-// error written there is invisible — it must be shown here, with a
-// working recovery action.
-function showLoaderError(message) {
+// error written there is invisible — it must be shown here, with a working
+// recovery action. Accepts either a plain string (legacy call sites) or a
+// { phase, message, code, clipboard, allowOffline, detail } object.
+let _loaderErrorClipboard = "";
+function showLoaderError(arg) {
   if (_loaderDismissed) return;
+  let opts;
+  if (typeof arg === "string") {
+    opts = { message: arg };
+  } else if (arg && arg.phase) {
+    const info = deriveLoadError(arg.phase, arg.detail);
+    opts = {
+      message: arg.message || info.message,
+      code: info.code,
+      clipboard: info.clipboard,
+      allowOffline: arg.allowOffline != null ? arg.allowOffline : info.allowOffline,
+    };
+  } else {
+    opts = arg || {};
+  }
   _loaderErrored = true;
-  if (_loaderStatus) _loaderStatus.textContent = "Something went wrong";
   if (_loaderTrackEl) _loaderTrackEl.style.display = "none";
-  if (_loaderErrorMsg) _loaderErrorMsg.textContent = message || "Unexpected error.";
+
+  // Escalate guidance after repeated failed reloads in the same session —
+  // the real fix is often "keep waiting", which a blind reload can't convey.
+  let retries = 0;
+  try { retries = parseInt(sessionStorage.getItem("sands:loadRetries") || "0", 10) || 0; } catch (_) {}
+  let message = opts.message || "Unexpected error.";
+  if (retries >= 2) {
+    message = "Still not working after " + retries + " tries. The server may be busy "
+      + "preparing the canvas — this can take a few minutes on first load. Keep waiting, "
+      + "or report the code below.";
+  }
+
+  if (_loaderStatus) _loaderStatus.textContent = "Something went wrong";
+  if (_loaderErrorMsg) _loaderErrorMsg.textContent = message;
+
+  if (_loaderErrorCodebox) {
+    if (opts.code) {
+      _loaderErrorClipboard = opts.clipboard || opts.code;
+      if (_loaderErrorCode) _loaderErrorCode.textContent = opts.code;
+      _loaderErrorCodebox.hidden = false;
+    } else {
+      _loaderErrorCodebox.hidden = true;
+    }
+  }
+  if (_loaderOfflineBtn) _loaderOfflineBtn.hidden = !opts.allowOffline;
   if (_loaderError) _loaderError.hidden = false;
 }
 
@@ -1604,9 +1860,36 @@ function showLoaderError(message) {
 // module-scope state (sockets, sim interval, gate flags); a full reload
 // is the correct-by-construction recovery and is cheap on a static shell.
 function retryBoot() {
+  try {
+    const n = (parseInt(sessionStorage.getItem("sands:loadRetries") || "0", 10) || 0) + 1;
+    sessionStorage.setItem("sands:loadRetries", String(n));
+  } catch (_) {}
   location.reload();
 }
 if (_loaderRetryBtn) _loaderRetryBtn.addEventListener("click", retryBoot);
+
+if (_loaderErrorCopy) {
+  _loaderErrorCopy.addEventListener("click", async () => {
+    const ok = await copyTextToClipboard(_loaderErrorClipboard);
+    _loaderErrorCopy.textContent = ok ? "Copied" : "Copy failed";
+    setTimeout(() => { if (_loaderErrorCopy) _loaderErrorCopy.textContent = "Copy"; }, 1800);
+  });
+}
+
+// Play offline: the engine is up (or the failing dependency is chain-only),
+// so drop straight into local-only mode rather than blocking the canvas.
+function playOffline() {
+  _loaderTestForce = false; // allow dismissal even from a forced test state
+  enterDegradedMode();
+  _chainLoaderReady = true;
+  // The engine flag may already be set; if not (chain-only failure with a
+  // loaded snapshot) treat the canvas as interactive so the overlay clears.
+  _engineLoaderReady = true;
+  _loaderErrored = false;
+  if (_loaderError) _loaderError.hidden = true;
+  tryDismissLoader();
+}
+if (_loaderOfflineBtn) _loaderOfflineBtn.addEventListener("click", playOffline);
 
 // ── Degraded (local-only) mode ──────────────────────────────────────────────
 // Shown when the chain gate times out but the engine is up: the user can
@@ -1633,8 +1916,12 @@ if (_degradedBannerClose && _degradedBanner) {
 
 function tryDismissLoader() {
   if (_loaderDismissed) return;
+  if (_loaderTestForce) return; // dev-only: keep a forced ?loaderTest state visible
   if (!_engineLoaderReady || !_chainLoaderReady) return;
   _loaderDismissed = true;
+  // Successful boot — clear the escalating-retry counter so a future
+  // unrelated failure starts its guidance fresh.
+  try { sessionStorage.removeItem("sands:loadRetries"); } catch (_) {}
   setLoading(100, "Ready!");
   if (_loaderOverlay) {
     _loaderOverlay.classList.add("fade-out");
@@ -1687,6 +1974,10 @@ async function pollChainReady() {
       await _sleep(1000);
       continue;
     }
+
+    // Cache for deriveLoadError/pickStallPhase so a terminal error can name
+    // the actual chain cause (block X/Y, explorer hosts).
+    _lastNodeStatusSnap = snap;
 
     if (snap.status === "mock" || snap.status === "unknown") {
       _chainLoaderReady = true;
@@ -1800,28 +2091,104 @@ async function startLoaderWatchdog() {
   setTimeout(() => {
     if (_loaderDismissed || _loaderErrored) return;
     // Reassure without alarming — this is still the happy path, just slow.
-    if (_loaderStatus && !_engineLoaderReady) {
-      _loaderStatus.textContent = "Still working… taking longer than usual";
+    _loaderSlow = true;
+    if (_loaderStatus && !_engineLoaderReady && _bootStage !== "replay") {
+      _loaderStatus.textContent = "Still working… first load can take a few minutes";
     }
   }, LOADER_SOFT_NOTICE_MS);
 
+  // Engine-ready-but-chain-stuck backstop: drop into local-only mode so the
+  // user can draw. Defense-in-depth alongside markEngineReadyForLoaderGate
+  // (6s) and pollChainReady's own deadline — time-based here is fine because
+  // the engine is up and the canvas is already interactive.
   setTimeout(() => {
     if (_loaderDismissed || _loaderErrored) return;
-    if (!_engineLoaderReady) {
-      // The simulation itself never came up (WASM stalled past its own
-      // timeout, or WS connected but no init arrived). Nothing to fall
-      // back to — surface a visible, recoverable error.
-      showLoaderError("Couldn't start the simulation. Check your connection and tap Retry.");
-      return;
+    if (_engineLoaderReady) {
+      _chainLoaderReady = true;
+      enterDegradedMode();
+      tryDismissLoader();
     }
-    // Engine is ready; only the chain gate is holding the loader. Drop into
-    // local-only mode so the user can draw, with a visible banner.
-    _chainLoaderReady = true;
-    enterDegradedMode();
-    tryDismissLoader();
   }, LOADER_HARD_DEADLINE_MS);
+
+  // Engine-not-ready stall detector — the core of this fix. Fire a terminal,
+  // cause-named error ONLY when forward progress has gone stale, never on a
+  // fixed wall-clock mark. A healthy-but-slow cold-boot replay keeps the bar
+  // moving (markEngineProgress on each strictly-increasing `loading` message)
+  // and is never falsely failed.
+  const stallTimer = setInterval(() => {
+    if (_loaderDismissed || _loaderErrored) { clearInterval(stallTimer); return; }
+    if (_engineLoaderReady) return; // chain branch handles this case
+    if (Date.now() - _lastEngineProgressMs > LOADER_STALL_MS) {
+      clearInterval(stallTimer);
+      showLoaderError({ phase: pickStallPhase() });
+    }
+  }, 2000);
 }
 startLoaderWatchdog();
+
+// Dev-only loader-state forcing hook. `?loaderTest=replay|node|explorer|
+// wasm|ws|offline` renders the corresponding terminal card so the messages,
+// copyable code, Copy button, and Play-offline branch can be exercised in
+// staging without standing up a real cold-boot replay or a desynced node.
+// Strictly gated behind mock/local-dev so it can never trigger in production.
+(function _maybeRunLoaderTest() {
+  let param = null;
+  try { param = new URLSearchParams(location.search).get("loaderTest"); } catch (_) {}
+  if (!param) return;
+  // Hold dismissal synchronously so a fast mock boot can't clear the overlay
+  // before we confirm mock mode and render the forced card below.
+  _loaderTestForce = true;
+  (async () => {
+  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+    ? await window.usernode.isMockEnabled()
+    : false;
+  // Also enabled on the staging preview (production mode, not mock) so the
+  // states can be exercised there. /__build reports staging:true only when
+  // USERNODE_ENV === "staging" — never in production.
+  let stagingEnabled = false;
+  if (!mockEnabled) {
+    try {
+      const r = await fetch("/__build", { cache: "no-store" });
+      if (r.ok) { const b = await r.json(); stagingEnabled = b && b.staging === true; }
+    } catch (_) {}
+  }
+  if (!mockEnabled && !stagingEnabled) { _loaderTestForce = false; return; }
+  // Run after the initial setLoading() calls so our forced card wins.
+  setTimeout(() => {
+    switch (param) {
+      case "replay":
+        _bootStage = "replay";
+        showLoaderError({ phase: "REPLAY" });
+        break;
+      case "node":
+        _lastNodeStatusSnap = { status: "Syncing", hasBeenSynced: false,
+          bestTipHeight: 12340, peerBestTipHeight: 18002 };
+        showLoaderError({ phase: "NODE" });
+        break;
+      case "explorer":
+        _lastNodeStatusSnap = { status: "Connected", explorerHasBeenOk: false,
+          explorer: { status: "unreachable", hosts: [{ host: "explorer-a.example" }, { host: "explorer-b.example" }] } };
+        showLoaderError({ phase: "EXPLORER" });
+        break;
+      case "wasm":
+        showLoaderError({ phase: "WASM" });
+        break;
+      case "ws":
+        showLoaderError({ phase: "WS" });
+        break;
+      case "offline":
+        // Engine already up, only the chain gate blocking → Play offline path.
+        _engineLoaderReady = true;
+        _lastNodeStatusSnap = { status: "Syncing", hasBeenSynced: false,
+          bestTipHeight: 12340, peerBestTipHeight: 18002 };
+        showLoaderError({ phase: "NODE" });
+        break;
+      default:
+        _loaderTestForce = false;
+    }
+  }, 400);
+  })();
+})();
 
 // =============================================================================
 // CONFIGURATION
@@ -2948,6 +3315,7 @@ function handleMessage(event) {
     const msg = JSON.parse(event.data);
 
     if (msg.type === "init") {
+      markEngineProgress(); // server handshake arrived — forward progress
       // Use the server's epoch (derived from chain genesis) for tick calculations.
       if (msg.epoch && typeof msg.epoch === "number") {
         TICK_EPOCH = msg.epoch;
@@ -3093,8 +3461,19 @@ function handleMessage(event) {
       simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
 
     } else if (msg.type === "loading") {
-      const pct = Math.round((msg.progress || 0) * 100);
-      setLoading(Math.min(pct, 45), "Server loading\u2026 " + pct + "%");
+      const prog = typeof msg.progress === "number" ? msg.progress : 0;
+      // Only a strictly-increasing value counts as forward progress \u2014 a
+      // stream stuck at the same value must still trip the stall detector.
+      if (prog > _lastWsLoadingProgress) {
+        _lastWsLoadingProgress = prog;
+        markEngineProgress();
+      }
+      _bootStage = "replay";
+      const pct = Math.round(prog * 100);
+      const text = _loaderSlow
+        ? "Preparing the canvas\u2026 " + pct + "% \u00b7 first load can take a few minutes"
+        : "Preparing the canvas\u2026 " + pct + "%";
+      setLoading(Math.min(pct, 45), text);
 
     } else if (msg.type === "tx") {
       addPendingTx(msg);
@@ -3150,6 +3529,7 @@ function startRound() {
       ws = sock;
       const openedAtMs = Date.now();
       lastWsActivityMs = openedAtMs;
+      markEngineProgress(); // socket reached OPEN — forward progress
       dbg(`R${rid}.${idx} connected`);
       if (canOverwriteStatus()) statusEl.className = "ok";
       try { sock.send(JSON.stringify({ type: "ready" })); }
@@ -3164,8 +3544,13 @@ function startRound() {
       setTimeout(() => {
         if (_loaderDismissed || _loaderErrored || _engineLoaderReady) return;
         if (ws !== sock) return; // socket was replaced — let its own wait run
-        if (lastWsActivityMs > openedAtMs) return; // server is talking; keep waiting
-        showLoaderError("The server isn't responding. Tap Retry to reconnect.");
+        // Gate on real FORWARD progress, not just any inbound byte: the
+        // server streams `loading` messages during replay, and a frozen
+        // stream (same progress repeated) used to suppress this check
+        // forever. markEngineProgress only fires on strictly-increasing
+        // progress, so a stuck server now correctly trips here.
+        if (_lastEngineProgressMs > openedAtMs) return; // genuinely progressing
+        showLoaderError({ phase: "REPLAY" });
       }, WS_INIT_WAIT_MS);
     };
 
@@ -3200,7 +3585,7 @@ function startRound() {
       // If the loader is still up, the status bar is occluded by it — show
       // the failure (with a working Retry) inside the overlay instead.
       if (!_loaderDismissed && !_engineLoaderReady) {
-        showLoaderError("Couldn't connect to the server. Check your connection and tap Retry.");
+        showLoaderError({ phase: "WS" });
       }
       document.body.addEventListener("click", () => { wsRound = 0; startRound(); }, { once: true });
     }
@@ -3213,6 +3598,8 @@ function startRound() {
 
 (async function initWasm() {
   try {
+    _bootStage = "wasm";
+    markEngineProgress();
     setLoading(10, "Loading simulation engine...");
     statusEl.textContent = "Loading WASM...";
     const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
@@ -3231,6 +3618,8 @@ function startRound() {
     if (plantAbsorbs) flags |= 4;  // FLAG_PLANT_ABSORBS
     if (flags) universe.set_flags(flags);
 
+    _bootStage = "ws";
+    markEngineProgress();
     setLoading(30, "Connecting to server...");
     statusEl.textContent = "Connecting...";
     scheduleConnect();
@@ -3238,7 +3627,7 @@ function startRound() {
     // Surface inside the overlay (the #status bar is occluded by it) with a
     // working Retry button instead of the old inert "tap to retry" text.
     const detail = (e && e.message) ? e.message : String(e);
-    showLoaderError("Couldn't load the simulation engine: " + detail);
+    showLoaderError({ phase: "WASM", detail });
     showError("WASM load failed: " + detail);
     console.error(e);
   }
