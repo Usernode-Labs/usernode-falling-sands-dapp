@@ -52,6 +52,7 @@ const {
   discoverChainInfo,
 } = require("./lib/dapp-server");
 const { createSnapshotStore } = require("./lib/snapshot-store");
+const { createLeaderboardStore } = require("./lib/leaderboard-store");
 const createEngine = require("./engine");
 
 loadEnvFile();
@@ -71,6 +72,9 @@ const NODE_RPC_URL = process.env.NODE_RPC_URL || "http://usernode-node:3000";
 // recent-tx-stream endpoints. Backfill is engine-owned and stays
 // explorer-driven regardless.
 const USE_NODE_STREAM = (process.env.USE_NODE_STREAM ?? "1") === "1";
+// Staging vs production (platform-injected). Used to gate demo seeding of
+// the leaderboard so a PR preview shows a populated board.
+const IS_STAGING = process.env.USERNODE_ENV === "staging";
 const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR
   ? path.resolve(process.env.SNAPSHOT_DIR)
   : path.join(__dirname, "data");
@@ -115,6 +119,7 @@ const nodeStatusProbe = createNodeStatusProbe({
 
 let engine = null;
 let engineCache = null;
+let leaderboard = null;
 
 nodeStatusProbe.registerStream("sands", () => !!engineCache && engineCache.isStreamReady());
 nodeStatusProbe.start();
@@ -191,6 +196,7 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     : await discoverChainInfo().catch(() => ({ chainId: null, genesisTimestampMs: null }));
 
   let replayTxs = [];
+  let fetchedTransactions = [];
   let lastHeight = null;
   let replayIds = [];
   if (!LOCAL_DEV && chainInfo.chainId && process.env.APP_PUBKEY) {
@@ -199,7 +205,8 @@ function trimToLatestAdminReset(txs, adminPubkey) {
       appPubkey: APP_PUBKEY,
       queryField: "recipient",
     });
-    replayTxs = trimToLatestAdminReset(fetched.transactions, ADMIN_PUBKEY);
+    fetchedTransactions = fetched.transactions || [];
+    replayTxs = trimToLatestAdminReset(fetchedTransactions, ADMIN_PUBKEY);
     // lastHeight + replayIds intentionally come from the FULL fetched set,
     // not the trimmed one — the live poller resumes from the real chain
     // tip and dedups by id, so it must see every backfilled tx id.
@@ -224,6 +231,32 @@ function trimToLatestAdminReset(txs, adminPubkey) {
   // active windows) so a 5s debounce is comfortable.
   snapshotStore.start();
 
+  // ── Leaderboard / scoring ────────────────────────────────────────
+  // Deterministic, chain-derived scoring that lives entirely outside the
+  // vendored engine. Backfill uses the FULL fetched history (NOT the
+  // admin-reset-trimmed replayTxs): a canvas reset wipes pixels but must
+  // not erase players' lifetime contribution. Then every live tx is
+  // scored by wrapping the cache's processTransaction.
+  leaderboard = createLeaderboardStore({
+    databaseUrl: process.env.DATABASE_URL || null,
+    chainId: chainInfo.chainId,
+    width: engine.config.width,
+    height: engine.config.height,
+  });
+  await leaderboard.init();
+  leaderboard.ingestAll(fetchedTransactions); // FULL untrimmed history
+  if (IS_STAGING || LOCAL_DEV) leaderboard.seedDemo();
+  leaderboard.start();
+
+  const scoredProcessTransaction = (rawTx) => {
+    try {
+      leaderboard.ingest(rawTx);
+    } catch (e) {
+      console.warn(`[leaderboard] ingest failed: ${e.message}`);
+    }
+    return engine.processChainTransaction(rawTx);
+  };
+
   engineCache = createAppStateCache({
     name: "sands",
     appPubkey: APP_PUBKEY,
@@ -232,11 +265,12 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     backfill: false,                  // engine handles its own (windowed replay)
     initialLastHeight: lastHeight,    // seed live poller from where replay ended
     initialSeenIds: replayIds,
-    processTransaction: engine.processChainTransaction,
+    processTransaction: scoredProcessTransaction,
     handleRequest: engine.handleRequest,
     onChainReset(newId, oldId) {
       console.log(`[sands] chain reset ${oldId} -> ${newId}, resetting engine`);
       engine.reset();
+      if (leaderboard) leaderboard.onChainReset(newId, oldId);
     },
     localDev: LOCAL_DEV,
     mockTransactions: LOCAL_DEV ? mockApi.transactions : null,
@@ -261,6 +295,23 @@ app.use((req, res, next) => {
     return res.status(503).type("text/plain").send("Engine loading...");
   }
   next();
+});
+
+// ── Leaderboard (public, read-only — same surface as the other __sands APIs) ─
+// GET /__sands/leaderboard?scope=all|daily&me=<pubkey>
+//   { scope, updatedAt, totalPlayers, top: [...], you: {...}|null }
+// `me` lets the (public, JWT-less) client identify its own row — the page
+// passes its wallet address so it can highlight/pin "You".
+app.get("/__sands/leaderboard", (req, res) => {
+  if (!leaderboard) {
+    return res.status(503).json({ error: "Leaderboard loading..." });
+  }
+  const scope = req.query.scope === "daily" ? "daily" : "all";
+  const me = typeof req.query.me === "string" ? req.query.me : null;
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 100));
+  const payload = leaderboard.getLeaderboard({ scope, me, limit });
+  res.set("Cache-Control", "no-store");
+  res.json(payload);
 });
 
 // ── Global usernames cache ───────────────────────────────────────────────────
@@ -443,6 +494,11 @@ async function shutdown(signal) {
     await snapshotStore.flushNow();
   } catch (e) {
     console.warn(`[server] snapshot flush failed: ${e.message}`);
+  }
+  try {
+    if (leaderboard) await leaderboard.flushNow();
+  } catch (e) {
+    console.warn(`[server] leaderboard flush failed: ${e.message}`);
   }
   try {
     server.close(() => process.exit(0));
