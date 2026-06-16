@@ -837,6 +837,28 @@ pub fn update_lava(cell: Cell, mut api: SandApi) {
         pressure: 0,
         density: 60,
     });
+
+    // Natural cooling: solidify to Stone when fully cold.
+    if cell.ra == 0 {
+        api.set(
+            0,
+            0,
+            Cell {
+                species: Species::Stone,
+                ra: 150,
+                rb: 0,
+                clock: 0,
+            },
+        );
+        return;
+    }
+    // Slowly decrement the heat counter each tick.
+    let cell = if api.once_in(15) {
+        Cell { ra: cell.ra - 1, ..cell }
+    } else {
+        cell
+    };
+
     let (dx, dy) = api.rand_vec();
 
     if api.get(dx, dy).species == Species::Gas || api.get(dx, dy).species == Species::Dust {
@@ -852,7 +874,30 @@ pub fn update_lava(cell: Cell, mut api: SandApi) {
         );
     }
     let sample = api.get(dx, dy);
-    if sample.species == Species::Water {
+    if sample.species == Species::Ice {
+        // Lava + ice: both quench to water.
+        api.set(
+            0,
+            0,
+            Cell {
+                species: Species::Water,
+                ra: cell.ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
+        api.set(
+            dx,
+            dy,
+            Cell {
+                species: Species::Water,
+                ra: cell.ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
+    } else if sample.species == Species::Water {
+        // Lava + water: lava solidifies, water flashes to steam.
         api.set(
             0,
             0,
@@ -863,7 +908,17 @@ pub fn update_lava(cell: Cell, mut api: SandApi) {
                 clock: 0,
             },
         );
-        api.set(dx, dy, EMPTY_CELL);
+        let steam_ra = 140 + api.rand_int(40) as u8;
+        api.set(
+            dx,
+            dy,
+            Cell {
+                species: Species::Steam,
+                ra: steam_ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
     } else if api.get(0, 1).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
         api.set(0, 1, cell);
@@ -972,9 +1027,7 @@ pub fn update_ice(cell: Cell, mut api: SandApi) {
         return;
     }
 
-    // Ice is a passive solid: it melts under high pressure or against
-    // heat (fire/lava), but it does NOT actively freeze adjacent water.
-    // Drawing an ice cube into water leaves the surrounding water liquid.
+    // Melt when touching fire or lava.
     let nbr_species = api.get(dx, dy).species;
     if nbr_species == Species::Fire || nbr_species == Species::Lava {
         api.set(
@@ -984,6 +1037,23 @@ pub fn update_ice(cell: Cell, mut api: SandApi) {
                 species: Species::Water,
                 ra: cell.ra,
                 rb: cell.rb,
+                clock: 0,
+            },
+        );
+        return;
+    }
+
+    // Active freezing: slowly freeze adjacent water cells.
+    let (fx, fy) = api.rand_vec_8();
+    if api.get(fx, fy).species == Species::Water && api.once_in(20) {
+        let ice_ra = 100u8.wrapping_add(api.rand_int(50) as u8);
+        api.set(
+            fx,
+            fy,
+            Cell {
+                species: Species::Ice,
+                ra: ice_ra,
+                rb: 0,
                 clock: 0,
             },
         );
