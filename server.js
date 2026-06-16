@@ -52,6 +52,9 @@ const {
   discoverChainInfo,
 } = require("./lib/dapp-server");
 const { createSnapshotStore } = require("./lib/snapshot-store");
+const { createLeaderboardStore } = require("./lib/leaderboard-store");
+const { createCreationsStore } = require("./lib/creations-store");
+const { mountCreationsRoutes } = require("./lib/creations-routes");
 const createEngine = require("./engine");
 
 loadEnvFile();
@@ -71,6 +74,9 @@ const NODE_RPC_URL = process.env.NODE_RPC_URL || "http://usernode-node:3000";
 // recent-tx-stream endpoints. Backfill is engine-owned and stays
 // explorer-driven regardless.
 const USE_NODE_STREAM = (process.env.USE_NODE_STREAM ?? "1") === "1";
+// Staging vs production (platform-injected). Used to gate demo seeding of
+// the leaderboard so a PR preview shows a populated board.
+const IS_STAGING = process.env.USERNODE_ENV === "staging";
 const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR
   ? path.resolve(process.env.SNAPSHOT_DIR)
   : path.join(__dirname, "data");
@@ -115,6 +121,8 @@ const nodeStatusProbe = createNodeStatusProbe({
 
 let engine = null;
 let engineCache = null;
+let leaderboard = null;
+let creations = null;
 
 nodeStatusProbe.registerStream("sands", () => !!engineCache && engineCache.isStreamReady());
 nodeStatusProbe.start();
@@ -191,6 +199,7 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     : await discoverChainInfo().catch(() => ({ chainId: null, genesisTimestampMs: null }));
 
   let replayTxs = [];
+  let fetchedTransactions = [];
   let lastHeight = null;
   let replayIds = [];
   if (!LOCAL_DEV && chainInfo.chainId && process.env.APP_PUBKEY) {
@@ -199,7 +208,8 @@ function trimToLatestAdminReset(txs, adminPubkey) {
       appPubkey: APP_PUBKEY,
       queryField: "recipient",
     });
-    replayTxs = trimToLatestAdminReset(fetched.transactions, ADMIN_PUBKEY);
+    fetchedTransactions = fetched.transactions || [];
+    replayTxs = trimToLatestAdminReset(fetchedTransactions, ADMIN_PUBKEY);
     // lastHeight + replayIds intentionally come from the FULL fetched set,
     // not the trimmed one — the live poller resumes from the real chain
     // tip and dedups by id, so it must see every backfilled tx id.
@@ -216,6 +226,36 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     snapshotDir: SNAPSHOT_DIR,
   });
   engine.attachWebSocket(server);
+
+  // Start listening only after the WebSocket handler is attached so the
+  // HTTP server never accepts upgrade requests before the ws.Server exists.
+  // Node.js destroys unhandled upgrade sockets immediately, causing every
+  // client WS attempt to fail and showing SND-LOAD-WS within seconds of
+  // page load. SV's waitForHealthy probe polls /health and will wait here;
+  // once the port opens, /health responds 200 and traffic is routed.
+  await new Promise((resolve) => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`\nFalling Sands server running at http://localhost:${PORT}`);
+
+      const nets = require("os").networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const iface of nets[name]) {
+          if (iface.family === "IPv4" && !iface.internal) {
+            console.log(`   LAN: http://${iface.address}:${PORT}`);
+          }
+        }
+      }
+
+      console.log(`  App pubkey:    ${process.env.APP_PUBKEY ? APP_PUBKEY.slice(0, 24) + "…" : "(default sentinel — local-dev only)"}`);
+      console.log(`  Admin pubkey:  ${ADMIN_PUBKEY ? ADMIN_PUBKEY.slice(0, 24) + "…" : "(unset)"}`);
+      console.log(`  Node RPC:      ${NODE_RPC_URL}${USE_NODE_STREAM ? " (direct-node SSE on)" : ""}`);
+      console.log(`  Snapshot dir:  ${SNAPSHOT_DIR}`);
+      console.log(`  Persistence:   ${process.env.DATABASE_URL ? "Postgres" : "disk-only (DATABASE_URL unset)"}`);
+      console.log(`  Mode:          ${LOCAL_DEV ? "LOCAL DEV (mock API)" : "production"}\n`);
+      resolve();
+    });
+  });
+
   await engine.init();
   engine.startTickLoop();
 
@@ -223,6 +263,45 @@ function trimToLatestAdminReset(txs, adminPubkey) {
   // (re)built it. Engine writes are infrequent (freeze events / 2h
   // active windows) so a 5s debounce is comfortable.
   snapshotStore.start();
+
+  // ── Leaderboard / scoring ────────────────────────────────────────
+  // Deterministic, chain-derived scoring that lives entirely outside the
+  // vendored engine. Backfill uses the FULL fetched history (NOT the
+  // admin-reset-trimmed replayTxs): a canvas reset wipes pixels but must
+  // not erase players' lifetime contribution. Then every live tx is
+  // scored by wrapping the cache's processTransaction.
+  leaderboard = createLeaderboardStore({
+    databaseUrl: process.env.DATABASE_URL || null,
+    chainId: chainInfo.chainId,
+    width: engine.config.width,
+    height: engine.config.height,
+  });
+  await leaderboard.init();
+  leaderboard.ingestAll(fetchedTransactions); // FULL untrimmed history
+  if (IS_STAGING || LOCAL_DEV) leaderboard.seedDemo();
+  leaderboard.start();
+
+  // ── Personal saved-creations gallery ─────────────────────────────
+  // User uploads (canvas snapshots), NOT chain-derived — Postgres is
+  // authoritative; degrades to in-memory if DATABASE_URL is unset. The
+  // HTTP routes are registered unconditionally below; they 503 until
+  // this assignment lands.
+  creations = createCreationsStore({
+    databaseUrl: process.env.DATABASE_URL || null,
+    width: engine.config.width,
+    height: engine.config.height,
+  });
+  await creations.init();
+  if (IS_STAGING || LOCAL_DEV) await creations.seedDemo();
+
+  const scoredProcessTransaction = (rawTx) => {
+    try {
+      leaderboard.ingest(rawTx);
+    } catch (e) {
+      console.warn(`[leaderboard] ingest failed: ${e.message}`);
+    }
+    return engine.processChainTransaction(rawTx);
+  };
 
   engineCache = createAppStateCache({
     name: "sands",
@@ -232,11 +311,12 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     backfill: false,                  // engine handles its own (windowed replay)
     initialLastHeight: lastHeight,    // seed live poller from where replay ended
     initialSeenIds: replayIds,
-    processTransaction: engine.processChainTransaction,
+    processTransaction: scoredProcessTransaction,
     handleRequest: engine.handleRequest,
     onChainReset(newId, oldId) {
       console.log(`[sands] chain reset ${oldId} -> ${newId}, resetting engine`);
       engine.reset();
+      if (leaderboard) leaderboard.onChainReset(newId, oldId);
     },
     localDev: LOCAL_DEV,
     mockTransactions: LOCAL_DEV ? mockApi.transactions : null,
@@ -262,6 +342,30 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// ── Leaderboard (public, read-only — same surface as the other __sands APIs) ─
+// GET /__sands/leaderboard?scope=all|daily&me=<pubkey>
+//   { scope, updatedAt, totalPlayers, top: [...], you: {...}|null }
+// `me` lets the (public, JWT-less) client identify its own row — the page
+// passes its wallet address so it can highlight/pin "You".
+app.get("/__sands/leaderboard", (req, res) => {
+  if (!leaderboard) {
+    return res.status(503).json({ error: "Leaderboard loading..." });
+  }
+  const scope = req.query.scope === "daily" ? "daily" : "all";
+  const me = typeof req.query.me === "string" ? req.query.me : null;
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 100));
+  const payload = leaderboard.getLeaderboard({ scope, me, limit });
+  res.set("Cache-Control", "no-store");
+  res.json(payload);
+});
+
+// ── Personal saved-creations gallery (public, same JWT-less surface) ─────────
+// Ownership is client-asserted via the `owner` wallet pubkey, exactly like
+// the leaderboard's `me=<pubkey>`. Routes live in lib/creations-routes.js so
+// the same handlers are exercised by tests. `getStore` returns null until the
+// async init below assigns `creations` — handlers 503 until then.
+mountCreationsRoutes(app, { express, getStore: () => creations });
 
 // ── Global usernames cache ───────────────────────────────────────────────────
 // Same shared wiring as engineCache, just for the global usernames address.
@@ -348,7 +452,14 @@ console.log(`  Build version: ${STARTUP_BUILD_VERSION}`);
 
 app.get("/__build", (_req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ version: getBuildVersion(), localDev: LOCAL_DEV });
+  // `staging` lets the client enable the dev-only ?loaderTest= forcing hook
+  // on the per-PR staging preview (which runs in production mode, not mock),
+  // so loader failure states can be exercised there. Never true in prod.
+  res.json({
+    version: getBuildVersion(),
+    localDev: LOCAL_DEV,
+    staging: process.env.USERNODE_ENV === "staging",
+  });
 });
 
 // ── Aggregated dapp-server status ───────────────────────────────────────────
@@ -445,6 +556,16 @@ async function shutdown(signal) {
     console.warn(`[server] snapshot flush failed: ${e.message}`);
   }
   try {
+    if (leaderboard) await leaderboard.flushNow();
+  } catch (e) {
+    console.warn(`[server] leaderboard flush failed: ${e.message}`);
+  }
+  try {
+    if (creations) await creations.flushNow();
+  } catch (e) {
+    console.warn(`[server] creations flush failed: ${e.message}`);
+  }
+  try {
     server.close(() => process.exit(0));
   } catch (_) {
     process.exit(0);
@@ -455,23 +576,7 @@ async function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// ── Start ────────────────────────────────────────────────────────────────────
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`\nFalling Sands server running at http://localhost:${PORT}`);
-
-  const nets = require("os").networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const iface of nets[name]) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        console.log(`   LAN: http://${iface.address}:${PORT}`);
-      }
-    }
-  }
-
-  console.log(`  App pubkey:    ${process.env.APP_PUBKEY ? APP_PUBKEY.slice(0, 24) + "…" : "(default sentinel — local-dev only)"}`);
-  console.log(`  Admin pubkey:  ${ADMIN_PUBKEY ? ADMIN_PUBKEY.slice(0, 24) + "…" : "(unset)"}`);
-  console.log(`  Node RPC:      ${NODE_RPC_URL}${USE_NODE_STREAM ? " (direct-node SSE on)" : ""}`);
-  console.log(`  Snapshot dir:  ${SNAPSHOT_DIR}`);
-  console.log(`  Persistence:   ${process.env.DATABASE_URL ? "Postgres" : "disk-only (DATABASE_URL unset)"}`);
-  console.log(`  Mode:          ${LOCAL_DEV ? "LOCAL DEV (mock API)" : "production"}\n`);
-});
+// server.listen() has been moved into the async init() IIFE above,
+// immediately after engine.attachWebSocket(server). This guarantees the
+// ws.Server is installed before the first HTTP connection is accepted,
+// preventing the SND-LOAD-WS race on cold boots.
