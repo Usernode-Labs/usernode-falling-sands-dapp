@@ -48,6 +48,7 @@ pub enum Species {
     Battery = 29, // source-gated pulse emitter (FLAG_SOURCES)
     Switch = 30,  // insulating, toggleable break in a wire run (open by default)
     Critter = 31, // genome-driven creature; ra = genome byte, rb = energy
+    Steam = 32,   // rising vapour; ra = condensation life countdown, rb = trapped counter
 }
 
 // Electricity tuning constants. See the Electricity & Automation spec.
@@ -59,6 +60,20 @@ const REFRACTORY_TICKS: u8 = 2;
 // and is odd during the update pass, so `g % BATTERY_PERIOD == 1` fires
 // once every BATTERY_PERIOD/2 ticks (here: every 6 ticks).
 const BATTERY_PERIOD: u8 = 12;
+
+// Steam tuning constants. Steam is a rising vapour that cools back into water.
+// STEAM_CONDENSE_RA: when a steam cell's `ra` life countdown drops below this
+// it condenses to Water. STEAM_TRAPPED_MAX: a steam cell that cannot rise or
+// spread for this many ticks (tracked in `rb`) condenses, so a cloud pinned
+// under a ceiling rains rather than accumulating forever. STEAM_COOL_ODDS:
+// 1-in-N chance per tick to condense when touching a cold neighbour.
+// BOIL_ODDS: 1-in-N chance per tick that water adjacent to Fire/Lava/Torch
+// flashes to Steam. All consume the engine PRNG (api.*) so the client and
+// server stay bit-identical.
+const STEAM_CONDENSE_RA: u8 = 5;
+const STEAM_TRAPPED_MAX: u8 = 6;
+const STEAM_COOL_ODDS: i32 = 8;
+const BOIL_ODDS: i32 = 4;
 
 impl Species {
     pub fn update(&self, cell: Cell, api: SandApi) {
@@ -94,6 +109,7 @@ impl Species {
             Species::Battery => update_battery(cell, api),
             Species::Switch => update_switch(cell, api),
             Species::Critter => update_critter(cell, api),
+            Species::Steam => update_steam(cell, api),
         }
     }
 }
@@ -197,6 +213,30 @@ pub fn update_stone(cell: Cell, mut api: SandApi) {
 }
 
 pub fn update_water(cell: Cell, mut api: SandApi) {
+    // Boiling: water touching heat (Fire/Lava/Torch) flashes to Steam with a
+    // small per-tick probability. Sampling one random neighbour keeps this
+    // cheap; the 1-in-BOIL_ODDS gate makes a pot over a torch bubble away
+    // gradually instead of vanishing in a single tick. This runs before the
+    // normal flow logic and returns early when it fires.
+    let (hx, hy) = api.rand_vec();
+    let heat = api.get(hx, hy).species;
+    if (heat == Species::Fire || heat == Species::Lava || heat == Species::Torch)
+        && api.once_in(BOIL_ODDS)
+    {
+        let ra = 120 + api.rand_int(60) as u8;
+        api.set(
+            0,
+            0,
+            Cell {
+                species: Species::Steam,
+                ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
+        return;
+    }
+
     let mut dx = api.rand_dir();
     let below = api.get(0, 1);
     let dx1 = api.get(dx, 1);
@@ -438,6 +478,104 @@ pub fn update_gas(cell: Cell, mut api: SandApi) {
             dy,
             Cell {
                 rb: nbr.rb + cell.rb,
+                ..cell
+            },
+        );
+    }
+}
+
+pub fn update_steam(cell: Cell, mut api: SandApi) {
+    // Steam is a rising vapour produced by boiling water (see update_water).
+    // It climbs, billows sideways, and cools back into water — closing a
+    // water→steam→water cycle. All randomness comes from the engine PRNG
+    // (api.*) so the server and the in-browser build stay bit-identical.
+
+    // 1. Condense by age: the life countdown (ra) has run out — rain back down.
+    if cell.ra < STEAM_CONDENSE_RA {
+        let ra = 60 + api.rand_int(40) as u8;
+        api.set(
+            0,
+            0,
+            Cell {
+                species: Species::Water,
+                ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
+        return;
+    }
+
+    // 2. Cool against cold neighbours: steam touching cold matter beads into
+    //    water faster than it would condense in free air.
+    let (nx, ny) = api.rand_vec();
+    let nbr = api.get(nx, ny).species;
+    if (nbr == Species::Ice
+        || nbr == Species::Water
+        || nbr == Species::Stone
+        || nbr == Species::Wall)
+        && api.once_in(STEAM_COOL_ODDS)
+    {
+        let ra = 60 + api.rand_int(40) as u8;
+        api.set(
+            0,
+            0,
+            Cell {
+                species: Species::Water,
+                ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
+        return;
+    }
+
+    // 3. Rise: prefer straight up, then a diagonal up, then a sideways spread.
+    //    Each successful move cools the cell a little (ra--) and clears the
+    //    trapped counter. ra >= STEAM_CONDENSE_RA here, so ra - 1 never wraps.
+    let dx = api.rand_dir();
+    let cooled = Cell {
+        ra: cell.ra - 1,
+        rb: 0,
+        ..cell
+    };
+    if api.get(0, -1).species == Species::Empty {
+        api.set(0, 0, EMPTY_CELL);
+        api.set(0, -1, cooled);
+        return;
+    }
+    if api.get(dx, -1).species == Species::Empty {
+        api.set(0, 0, EMPTY_CELL);
+        api.set(dx, -1, cooled);
+        return;
+    }
+    if api.get(dx, 0).species == Species::Empty {
+        api.set(0, 0, EMPTY_CELL);
+        api.set(dx, 0, cooled);
+        return;
+    }
+
+    // 4. Trapped: couldn't rise or spread this tick. Count up in rb; once
+    //    pinned long enough, condense so a cloud under a ceiling eventually
+    //    rains instead of accumulating forever.
+    if cell.rb >= STEAM_TRAPPED_MAX {
+        let ra = 60 + api.rand_int(40) as u8;
+        api.set(
+            0,
+            0,
+            Cell {
+                species: Species::Water,
+                ra,
+                rb: 0,
+                clock: 0,
+            },
+        );
+    } else {
+        api.set(
+            0,
+            0,
+            Cell {
+                rb: cell.rb + 1,
                 ..cell
             },
         );
