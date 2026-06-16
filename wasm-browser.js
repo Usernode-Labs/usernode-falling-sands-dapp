@@ -163,20 +163,56 @@ async function loadWasm(wasmUrl, opts) {
     if (controller) controller.abort();
   }, timeoutMs);
 
-  function rethrow(err) {
-    if (timedOut) {
-      throw new Error("WASM load timed out after " + Math.round(timeoutMs / 1000) + "s");
+  // Diagnostics captured as we progress so a failure can be classified and
+  // reported without changing the load flow. `stage` tracks where we are
+  // (fetch vs. instantiate); the response status/content-type are read once
+  // a response exists. All purely additive — the success path is untouched.
+  const streamingAvailable =
+    (typeof WebAssembly !== "undefined" && typeof WebAssembly.instantiateStreaming === "function");
+  let stage = "fetch";
+  let respStatus = null;
+  let respContentType = null;
+
+  // Attach structured diagnostics to the thrown Error and fold a concise
+  // human form into its message, then rethrow. Timeout keeps its existing
+  // wording (callers/users already recognize it). Always throws.
+  function decorate(err) {
+    let kind;
+    if (timedOut) kind = "timeout";
+    else if (stage === "fetch") kind = "fetch";
+    else kind = "compile";
+
+    const baseMsg = timedOut
+      ? "WASM load timed out after " + Math.round(timeoutMs / 1000) + "s"
+      : ((err && err.message) ? err.message : String(err));
+
+    // Reuse the original Error when we can keep its stack; synthesize one for
+    // the timeout (no useful underlying message) or non-Error throws.
+    const out = (timedOut || !(err instanceof Error)) ? new Error(baseMsg) : err;
+    out.wasmDiag = {
+      kind: kind,
+      url: wasmUrl,
+      httpStatus: respStatus,
+      contentType: respContentType,
+      streamingAvailable: streamingAvailable,
+    };
+    if (!timedOut) {
+      out.message = "WASM " + kind + " failed: " + baseMsg;
     }
-    throw err;
+    throw out;
   }
 
   let instance;
   try {
     const fetchOpts = controller ? { signal: controller.signal } : undefined;
+    stage = "fetch";
     const resp = await fetch(wasmUrl, fetchOpts);
+    respStatus = resp.status;
+    try { respContentType = resp.headers.get("content-type"); } catch (_) {}
     if (!resp.ok) throw new Error(`Failed to fetch WASM: ${resp.status}`);
 
-    if (typeof WebAssembly.instantiateStreaming === "function") {
+    stage = "compile";
+    if (streamingAvailable) {
       const result = await WebAssembly.instantiateStreaming(resp, imports);
       instance = result.instance;
     } else {
@@ -185,7 +221,7 @@ async function loadWasm(wasmUrl, opts) {
       instance = result.instance;
     }
   } catch (err) {
-    rethrow(err);
+    decorate(err);
   } finally {
     clearTimeout(timer);
   }

@@ -45,6 +45,78 @@
       if (status) status.textContent = "Something went wrong";
       if (msg)    msg.textContent =
         "Couldn't load a required component. Check your connection and tap Retry.";
+
+      // Diagnostics: name which dependency was missing and attach a copyable
+      // report. Runs entirely off global-presence checks + inline helpers so
+      // it never depends on any external script (regl/pako/bridge/controller)
+      // having loaded — the exact thing that may have failed. Headline copy
+      // above is unchanged; the token is appended as a readable fallback.
+      var token, missing;
+      try {
+        var hasREGL   = typeof window.createREGL !== "undefined";
+        var hasPako   = typeof window.pako !== "undefined";
+        var hasBridge = !!window.usernode;
+        if (!hasREGL)        { token = "SND-BOOT-REGL";   missing = "regl (WebGL renderer)"; }
+        else if (!hasPako)   { token = "SND-BOOT-PAKO";   missing = "pako (compression)"; }
+        else if (!hasBridge) { token = "SND-BOOT-BRIDGE"; missing = "usernode bridge"; }
+        else                 { token = "SND-BOOT-CTRL";   missing = "app controller (no external dependency missing)"; }
+      } catch (_) { token = "SND-BOOT-CTRL"; missing = "app controller"; }
+
+      var bootClip = token;
+      try {
+        var ln = ["Falling Sands — boot error", "Code: " + token, "Missing: " + missing];
+        try { ln.push("createREGL: " + (typeof window.createREGL !== "undefined")); } catch (_) {}
+        try { ln.push("pako: " + (typeof window.pako !== "undefined")); } catch (_) {}
+        try { ln.push("bridge: " + (!!window.usernode)); } catch (_) {}
+        try { ln.push("controllerAlive: " + (!!window.__sandsControllerAlive)); } catch (_) {}
+        try { ln.push("UA: " + ((typeof navigator !== "undefined" && navigator.userAgent) || "(unknown)")); } catch (_) {}
+        try { ln.push("Online: " + ((typeof navigator !== "undefined" && typeof navigator.onLine === "boolean") ? navigator.onLine : "(unknown)")); } catch (_) {}
+        try { ln.push("Streaming: " + (typeof WebAssembly !== "undefined" && typeof WebAssembly.instantiateStreaming === "function")); } catch (_) {}
+        try { ln.push("Time: " + new Date().toISOString()); } catch (_) {}
+        bootClip = ln.join("\n");
+      } catch (_) {}
+
+      // Surface the code in the existing code box, and wire our own Copy
+      // handler — the controller's wiring never ran (that's why we fired).
+      try {
+        var codebox = document.getElementById("loader-error-codebox");
+        var codeEl  = document.getElementById("loader-error-code");
+        var copyEl  = document.getElementById("loader-error-copy");
+        if (codeEl)  codeEl.textContent = token;
+        if (codebox) codebox.hidden = false;
+        if (copyEl && !copyEl.__bootWired) {
+          copyEl.__bootWired = true;
+          copyEl.addEventListener("click", function () {
+            function done() {
+              copyEl.textContent = "Copied";
+              setTimeout(function () { copyEl.textContent = "Copy"; }, 1800);
+            }
+            var async = false;
+            try {
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(bootClip).then(done).catch(function () {});
+                async = true;
+              }
+            } catch (_) {}
+            if (!async) {
+              try {
+                var ta = document.createElement("textarea");
+                ta.value = bootClip; ta.setAttribute("readonly", "");
+                ta.style.position = "fixed"; ta.style.opacity = "0";
+                document.body.appendChild(ta); ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                done();
+              } catch (_) {}
+            }
+          });
+        }
+      } catch (_) {}
+
+      // Readable fallback: append the token to the visible message so the
+      // user can report it even if the code box / copy path is unavailable.
+      try { if (msg) msg.textContent = msg.textContent + " (" + token + ")"; } catch (_) {}
+
       if (err)    err.hidden = false;
       if (retry && !retry.__bootWired) {
         retry.__bootWired = true;
@@ -1927,6 +1999,11 @@
 // in-app loader watchdog (stall detector + hard deadline) owns recovery.
 window.__sandsControllerAlive = true;
 
+// Build version, substituted server-side by renderIndexHtml (replaces the
+// __BUILD_VERSION__ token). Stays as the literal token in standalone/dev
+// serving; used only to label diagnostic reports, never for logic.
+const BUILD_VERSION = "__BUILD_VERSION__";
+
 // =============================================================================
 // ERROR DISPLAY
 // =============================================================================
@@ -2464,6 +2541,39 @@ function deriveLoadError(phase, detail) {
   if (detailLine) lines.push("Detail: " + detailLine);
   if (snap && snap.status) lines.push("Node: " + snap.status);
   if (typeof APP_PUBKEY === "string" && APP_PUBKEY) lines.push("App: " + APP_PUBKEY);
+
+  // ── Runtime / device context (diagnostics-only) ──────────────────────
+  // Cheap, always-available signals that make a copied loading-error report
+  // actionable. Every access is defensively guarded so building the report
+  // can never itself throw and turn a recoverable card into a crash.
+  try {
+    const ua = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "(unknown)";
+    lines.push("UA: " + ua);
+  } catch (_) {}
+  try {
+    const online = (typeof navigator !== "undefined" && typeof navigator.onLine === "boolean")
+      ? navigator.onLine : "(unknown)";
+    lines.push("Online: " + online);
+  } catch (_) {}
+  try {
+    const streaming = (typeof WebAssembly !== "undefined" && typeof WebAssembly.instantiateStreaming === "function");
+    lines.push("Streaming: " + streaming);
+  } catch (_) {}
+  try {
+    let asset = null;
+    if (phase === "LIB") asset = "cdn.jsdelivr.net / unpkg.com (regl, pako)";
+    else if (phase === "WASM") asset = "/sandtable_bg.wasm";
+    if (asset) lines.push("Asset: " + asset);
+  } catch (_) {}
+  // Build version is only present if the shell exposes one in page scope;
+  // omit (never fetch) when it isn't. Referencing an undefined identifier
+  // throws synchronously, which the guard swallows.
+  try {
+    if (typeof BUILD_VERSION !== "undefined" && BUILD_VERSION && BUILD_VERSION.indexOf("__") !== 0) {
+      lines.push("Build: " + BUILD_VERSION);
+    }
+  } catch (_) {}
+
   try { lines.push("Time: " + new Date().toISOString()); } catch (_) {}
   const clipboard = lines.join("\n");
 
@@ -4415,7 +4525,20 @@ function startRound() {
   } catch (e) {
     // Surface inside the overlay (the #status bar is occluded by it) with a
     // working Retry button instead of the old inert "tap to retry" text.
-    const detail = (e && e.message) ? e.message : String(e);
+    // The message already carries a concise reason; append the structured
+    // wasmDiag fields (HTTP status, content-type, streaming availability,
+    // attempted URL) so the copied report distinguishes the failure kind.
+    let detail = (e && e.message) ? e.message : String(e);
+    const d = e && e.wasmDiag;
+    if (d && typeof d === "object") {
+      const parts = [];
+      if (d.kind) parts.push("kind=" + d.kind);
+      if (d.httpStatus != null) parts.push("HTTP " + d.httpStatus);
+      if (d.contentType) parts.push("content-type=" + d.contentType);
+      if (d.streamingAvailable != null) parts.push("streaming=" + d.streamingAvailable);
+      if (d.url) parts.push("asset=" + d.url);
+      if (parts.length) detail += " [" + parts.join("; ") + "]";
+    }
     showLoaderError({ phase: "WASM", detail });
     showError("WASM load failed: " + detail);
     console.error(e);
