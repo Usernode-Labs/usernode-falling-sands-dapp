@@ -346,6 +346,55 @@
       text-align: center;
     }
 
+    #speed-label {
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+    #sim-speed {
+      width: 84px;
+      accent-color: var(--warn);
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-3);
+      cursor: pointer;
+      outline: none;
+    }
+    #sim-speed::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--warn);
+      border: 2px solid var(--surface-1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      transition: transform 0.1s;
+    }
+    #sim-speed::-webkit-slider-thumb:active { transform: scale(1.15); }
+    #sim-speed::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--warn);
+      border: 2px solid var(--surface-1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    #sim-speed::-moz-range-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-3);
+    }
+    #speed-value {
+      font-size: var(--fs-xs);
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      min-width: 20px;
+      text-align: center;
+    }
+
     /* The right slot is always reserved so the layout doesn't snap when
        the user starts/finishes a drawing session. Width fits a compact
        budget meter (24px) + ✕ (34px) + ✓ (34px) + two 6px gaps = 104px.
@@ -1666,6 +1715,9 @@
   <label id="brush-label">Brush</label>
   <input id="brush-size" type="range" min="1" max="15" value="4" />
   <span id="brush-value">4</span>
+  <label id="speed-label" style="display:none">Speed</label>
+  <input id="sim-speed" type="range" min="1" max="5" value="3" style="display:none" />
+  <span id="speed-value" style="display:none">1×</span>
   <button class="quick-btn" id="save-btn" type="button" title="Save this canvas to your gallery">&#x1F4BE;</button>
   <button class="quick-btn" id="gallery-btn" type="button" title="Your saved creations">&#x1F5BC;</button>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
@@ -2831,6 +2883,8 @@ let HEIGHT = 450;
 const CELL_BYTES = 4;
 const TICK_HZ = 30;
 const TICK_INTERVAL_MS = 1000 / TICK_HZ;
+const SPEED_STEPS = [0.25, 0.5, 1, 2, 4]; // maps slider position (1–5) to multiplier
+let simSpeedMult = 1;
 const RENDER_DELAY_MS = 5000;
 const CHECKPOINT_INTERVAL_TICKS = TICK_HZ * 5; // every 5 seconds
 const MAX_CHECKPOINTS = 24;
@@ -3072,6 +3126,7 @@ function fitToolbar() {
   try {
     const fabBarEl = document.getElementById("fab-bar");
     const brushLabelEl = document.getElementById("brush-label");
+    const speedLabelEl = document.getElementById("speed-label");
 
     // Reset to the most-permissive state and re-measure from there so the
     // recents/brush-label come back as soon as space is available again.
@@ -3079,6 +3134,7 @@ function fitToolbar() {
     recentLimit = limit;
     refreshQuickBar();
     if (brushLabelEl) brushLabelEl.style.display = "";
+    if (speedLabelEl && DEBUG_MODE) speedLabelEl.style.display = "";
 
     // Overflow detection by bounding-rect comparison. We can't rely on
     // toolbarEl.scrollWidth here: body{overflow:hidden} + #toolbar's
@@ -3107,6 +3163,9 @@ function fitToolbar() {
       refreshQuickBar();
     }
 
+    if (speedLabelEl && DEBUG_MODE) {
+      speedLabelEl.style.display = overflowing() ? "none" : "";
+    }
     if (brushLabelEl) {
       brushLabelEl.style.display = overflowing() ? "none" : "";
     }
@@ -3202,6 +3261,19 @@ brushSlider.addEventListener("input", () => {
   if (brushValueEl) brushValueEl.textContent = String(brushSize);
 });
 if (brushValueEl) brushValueEl.textContent = String(brushSize);
+
+const speedSlider  = document.getElementById("sim-speed");
+const speedValueEl = document.getElementById("speed-value");
+if (speedSlider) {
+  speedSlider.addEventListener("input", () => {
+    simSpeedMult = SPEED_STEPS[parseInt(speedSlider.value, 10) - 1];
+    if (speedValueEl) speedValueEl.textContent = simSpeedMult + "\xd7";
+    if (simInterval) {
+      clearInterval(simInterval);
+      simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
+    }
+  });
+}
 refreshCurrent();
 refreshQuickBar();
 fitToolbar();
@@ -3868,6 +3940,14 @@ function simTick30Hz() {
 const DEBUG_MODE = new URLSearchParams(window.location.search).has("debug");
 const debugHashEl = document.getElementById("debug-hash");
 if (DEBUG_MODE && debugHashEl) debugHashEl.classList.add("visible");
+if (DEBUG_MODE) {
+  const speedEls = [
+    document.getElementById("speed-label"),
+    document.getElementById("sim-speed"),
+    document.getElementById("speed-value"),
+  ];
+  for (const el of speedEls) { if (el) el.style.display = ""; }
+}
 
 async function computeCellHash() {
   if (!universe || !wasmMemory || !FRAME_SIZE) return null;
@@ -4078,7 +4158,7 @@ function handleMessage(event) {
       }
 
       if (simInterval) clearInterval(simInterval);
-      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+      simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
 
       // Shared-link deep entry: if the page was opened with ?creation=<id>,
       // drop into a preview of that creation now that the engine is live.
@@ -4138,7 +4218,7 @@ function handleMessage(event) {
       console.log(`[sands-resync] recovered at tick ${simTick}`);
       statusEl.className = "ok";
       statusEl.textContent = "Running locally";
-      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+      simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
 
     } else if (msg.type === "loading") {
       const prog = typeof msg.progress === "number" ? msg.progress : 0;
