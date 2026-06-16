@@ -283,7 +283,8 @@
     .quick-btn:active { transform: scale(0.94); }
     /* Currently-selected recent swatch — mirrors the picker's active ring so
        selection is visible in the quick bar, not only in #current-swatch. */
-    .quick-btn.recent.active {
+    .quick-btn.recent.active,
+    .quick-btn.eraser.active {
       border-color: #fff;
       box-shadow: 0 0 8px rgba(93,211,158,0.45);
     }
@@ -2808,7 +2809,7 @@ function refreshQuickBar() {
     quickBar.appendChild(btn);
   });
   const eraser = document.createElement("div");
-  eraser.className = "quick-btn eraser";
+  eraser.className = "quick-btn eraser" + (selectedSpecies === 0 ? " active" : "");
   eraser.title = "Erase";
   eraser.textContent = "\uD83E\uDDF9";
   eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); });
@@ -2930,7 +2931,7 @@ function rebuildPicker() {
     pickerGrid.appendChild(h);
   };
 
-  const elements = SPECIES.filter(s => s.id !== 0 && !s.source);
+  const elements = SPECIES.filter(s => !s.source);
   const sources = sourcesEnabled ? SPECIES.filter(s => s.source) : [];
 
   if (elements.length) {
@@ -2946,7 +2947,7 @@ rebuildPicker();
 
 function openPicker() {
   const items = pickerGrid.querySelectorAll(".picker-item");
-  const visible = SPECIES.filter(s => s.id !== 0 && (!s.source || sourcesEnabled));
+  const visible = SPECIES.filter(s => !s.source || sourcesEnabled);
   items.forEach((el, i) => {
     el.classList.toggle("active", visible[i] && visible[i].id === selectedSpecies);
   });
