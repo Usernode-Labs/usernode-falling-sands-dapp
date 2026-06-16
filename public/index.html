@@ -64,6 +64,9 @@
       gap: 6px;
       align-items: center;
     }
+    /* Compact mode: fitToolbar() adds .compact to #quick-bar on narrow
+       viewports to shrink the featured boxes/gap before any box is dropped. */
+    .quick-bar.compact { gap: 4px; }
     .quick-btn {
       width: 36px; height: 36px;
       border: 2px solid rgba(255,255,255,0.15);
@@ -76,6 +79,7 @@
       -webkit-tap-highlight-color: transparent;
       flex-shrink: 0;
     }
+    .quick-bar.compact .quick-btn { width: 28px; height: 28px; }
     .quick-btn:hover { transform: scale(1.08); }
     .quick-btn:active { transform: scale(0.94); }
     .quick-btn.eraser {
@@ -83,7 +87,14 @@
       font-size: 18px;
       color: #aaa;
     }
-    .quick-btn.recent { flex-shrink: 0; }
+    .quick-bar.compact .quick-btn.eraser { font-size: 14px; }
+    .quick-btn.featured { flex-shrink: 0; }
+    /* Highlight the quick box (featured element or eraser) matching the
+       current selection. */
+    .quick-btn.active {
+      border-color: #fff;
+      box-shadow: 0 0 6px rgba(255,255,255,0.45);
+    }
 
     #brush-label { font-size: 11px; color: #8896ab; }
     #brush-size { width: 80px; accent-color: #6ea8fe; }
@@ -931,7 +942,7 @@ const SPECIES = [
   { id: 8,  name: "Lava",  color: "#ff4500" },
   { id: 9,  name: "Ice",   color: "#a6dcef" },
   { id: 4,  name: "Gas",   color: "#d4d4d4" },
-  { id: 12, name: "Acid",  color: "#b8ff00" },
+  { id: 12, name: "Acid",  color: "#39ff14" },
   { id: 16, name: "Oil",   color: "#3a3a3a" },
   { id: 14, name: "Dust",  color: "#ff69b4" },
   { id: 5,  name: "Clone", color: "#9c27b0" },
@@ -955,13 +966,14 @@ let brushSize = 4;
 // ELEMENT SELECTOR
 // =============================================================================
 
-let recentIds = [1, 3, 6];
-const MAX_RECENT = 3;
-// How many recent-species swatches the quick bar is currently allowed to show.
-// fitToolbar() shrinks this whenever the toolbar would overflow the viewport
-// (narrow phones, especially when the send/discard fab-bar is visible) and
-// restores up to MAX_RECENT once there is room again.
-let recentLimit = MAX_RECENT;
+// Featured elements pinned into the quick bar, always shown in this order:
+// Water, Fire, Plant, Acid. Replaces the old MRU "recents" list so the four
+// interactive showcase elements are always one tap away.
+const FEATURED_IDS = [3, 6, 11, 12];
+// How many featured swatches the quick bar is currently allowed to show.
+// fitToolbar() drops boxes from the END (Acid first) only as a last resort
+// on very narrow viewports, after shrinking box size and hiding the label.
+let featuredLimit = FEATURED_IDS.length;
 const speciesById = {};
 SPECIES.forEach(sp => { speciesById[sp.id] = sp; });
 
@@ -982,37 +994,40 @@ function refreshCurrent() {
 
 function refreshQuickBar() {
   quickBar.innerHTML = "";
-  const visibleRecents = recentIds.slice(0, recentLimit);
-  visibleRecents.forEach(id => {
+  const visibleFeatured = FEATURED_IDS.slice(0, featuredLimit);
+  visibleFeatured.forEach(id => {
     const sp = speciesById[id];
     if (!sp) return;
     const btn = document.createElement("div");
-    btn.className = "quick-btn recent";
+    btn.className = "quick-btn featured" + (id === selectedSpecies ? " active" : "");
     btn.style.background = sp.color;
     btn.title = sp.name;
     btn.addEventListener("click", () => selectSpecies(id));
     quickBar.appendChild(btn);
   });
   const eraser = document.createElement("div");
-  eraser.className = "quick-btn eraser";
+  eraser.className = "quick-btn eraser" + (selectedSpecies === 0 ? " active" : "");
   eraser.title = "Erase";
   eraser.textContent = "\uD83E\uDDF9";
-  eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); });
+  eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); refreshQuickBar(); });
   quickBar.appendChild(eraser);
 }
 
 // Adaptive toolbar fit. The fab-bar (.tb-right) reserves a fixed 104px
 // slot via `flex: 0 0 104px` so the layout doesn't snap when the user
 // starts/finishes a drawing session — ✕/✓ + budget meter always have
-// space, and recents/brush stay sized for the worst case from the start.
+// space, and the featured boxes/brush stay sized for the worst case.
 //
-// What can still overflow: when the viewport is narrow enough that
-// even (current swatch + sep + eraser + brush slider + info + 104px
-// fab-bar) doesn't fit, we need to drop pieces off the left/middle.
+// What can still overflow: when the viewport is narrow enough that even
+// (current swatch + sep + four featured boxes + eraser + brush slider +
+// info + 104px fab-bar) doesn't fit, we need to shed width.
 //
-// Strategy: count recent swatches down from MAX_RECENT until the
-// toolbar fits. As a last resort (zero recents and still clipping)
-// hide the "Brush" text label — the slider stays usable.
+// Strategy, in order, each step re-measured before escalating:
+//   1. Shrink the featured boxes + gap (.compact on #quick-bar).
+//   2. Hide the "Brush" text label (the slider stays usable).
+//   3. As a last resort, drop featured boxes from the END (Acid first)
+//      until it fits — the eraser is always kept.
+// All four boxes come back at full size as soon as there's room again.
 let _fitInProgress = false;
 function fitToolbar() {
   if (!toolbarEl || _fitInProgress) return;
@@ -1022,9 +1037,9 @@ function fitToolbar() {
     const brushLabelEl = document.getElementById("brush-label");
 
     // Reset to the most-permissive state and re-measure from there so the
-    // recents/brush-label come back as soon as space is available again.
-    let limit = MAX_RECENT;
-    recentLimit = limit;
+    // boxes/brush-label come back as soon as space is available again.
+    featuredLimit = FEATURED_IDS.length;
+    quickBar.classList.remove("compact");
     refreshQuickBar();
     if (brushLabelEl) brushLabelEl.style.display = "";
 
@@ -1049,14 +1064,20 @@ function fitToolbar() {
       return false;
     }
 
-    while (limit > 0 && overflowing()) {
-      limit--;
-      recentLimit = limit;
-      refreshQuickBar();
+    // 1. Shrink the featured boxes/gap.
+    if (overflowing()) {
+      quickBar.classList.add("compact");
     }
 
-    if (brushLabelEl) {
-      brushLabelEl.style.display = overflowing() ? "none" : "";
+    // 2. Hide the brush label.
+    if (brushLabelEl && overflowing()) {
+      brushLabelEl.style.display = "none";
+    }
+
+    // 3. Last resort: drop featured boxes from the end (Acid first).
+    while (featuredLimit > 0 && overflowing()) {
+      featuredLimit--;
+      refreshQuickBar();
     }
 
     // Layout diagnostic — prints once per fit pass.
@@ -1066,7 +1087,8 @@ function fitToolbar() {
       const fabRect = fabBarEl ? fabBarEl.getBoundingClientRect() : null;
       console.log("[toolbar-fit]", {
         viewport: vw,
-        recentLimit,
+        featuredLimit,
+        compact: quickBar.classList.contains("compact"),
         brushLabelHidden: brushLabelEl ? brushLabelEl.style.display === "none" : null,
         toolbarRight: Math.round(tbRect.right),
         fabBarLeft: fabRect ? Math.round(fabRect.left) : null,
@@ -1082,17 +1104,7 @@ function fitToolbar() {
 }
 
 function selectSpecies(id) {
-  if (id === 0) { selectedSpecies = 0; refreshCurrent(); return; }
-  const prev = selectedSpecies;
   selectedSpecies = id;
-  if (prev !== 0 && prev !== id) {
-    recentIds = recentIds.filter(r => r !== id && r !== prev);
-    recentIds.unshift(prev);
-    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
-  } else {
-    recentIds = recentIds.filter(r => r !== id);
-    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
-  }
   refreshCurrent();
   refreshQuickBar();
 }
