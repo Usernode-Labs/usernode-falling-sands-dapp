@@ -283,7 +283,8 @@
     .quick-btn:active { transform: scale(0.94); }
     /* Currently-selected recent swatch — mirrors the picker's active ring so
        selection is visible in the quick bar, not only in #current-swatch. */
-    .quick-btn.recent.active {
+    .quick-btn.recent.active,
+    .quick-btn.active {
       border-color: #fff;
       box-shadow: 0 0 8px rgba(93,211,158,0.45);
     }
@@ -1474,6 +1475,7 @@
   <span id="brush-value">4</span>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
+  <button class="quick-btn" id="pause-btn" type="button" title="Pause" style="display:none">&#x23F8;</button>
   <!-- The .tb-right slot is always rendered so the toolbar layout
        doesn't snap when the user starts/finishes drawing, but its
        children start hidden — refreshFabs() reveals them only while
@@ -3819,6 +3821,10 @@ function handleMessage(event) {
 
       if (simInterval) clearInterval(simInterval);
       simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+      simPaused = false;
+      const pauseBtn = document.getElementById("pause-btn");
+      if (pauseBtn) pauseBtn.style.display = "";
+      updatePauseButton(false);
 
     } else if (msg.type === "resync") {
       // Error-recovery fallback: reload snapshot and restart simulation.
@@ -3868,6 +3874,8 @@ function handleMessage(event) {
       statusEl.className = "ok";
       statusEl.textContent = "Running locally";
       simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+      simPaused = false;
+      updatePauseButton(false);
 
     } else if (msg.type === "loading") {
       const prog = typeof msg.progress === "number" ? msg.progress : 0;
@@ -3895,6 +3903,28 @@ function handleMessage(event) {
 }
 
 let simInterval = null;
+let simPaused = false;
+
+function updatePauseButton(paused) {
+  const btn = document.getElementById("pause-btn");
+  if (!btn) return;
+  btn.textContent = paused ? "▶" : "⏸";
+  btn.title = paused ? "Resume" : "Pause";
+  btn.classList.toggle("active", paused);
+}
+
+function togglePause() {
+  if (simPaused) {
+    simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+    simPaused = false;
+  } else {
+    if (simInterval) { clearInterval(simInterval); simInterval = null; }
+    simPaused = true;
+  }
+  updatePauseButton(simPaused);
+}
+
+document.getElementById("pause-btn").addEventListener("click", togglePause);
 
 function startRound() {
   if (document.visibilityState === "hidden") return;
@@ -3972,6 +4002,9 @@ function startRound() {
         dbg(`close code=${ev.code}`);
         ws = null;
         if (simInterval) { clearInterval(simInterval); simInterval = null; }
+        simPaused = false;
+        const pauseBtn = document.getElementById("pause-btn");
+        if (pauseBtn) pauseBtn.style.display = "none";
         statusEl.className = "err";
         setTimeout(startRound, WS_ROUND_GAP);
       }
