@@ -217,6 +217,49 @@
     }
     .quick-btn.recent { flex-shrink: 0; }
 
+    /* ── Featured elements ────────────────────────────
+       A fixed, always-visible set of labeled color boxes (Water, Fire,
+       Plant, Acid) surfaced in the toolbar so they're one tap away. Unlike
+       the rotating recents these never change; fitToolbar drops them only
+       after all recents have collapsed. */
+    .featured-bar {
+      display: flex;
+      gap: var(--sp-1);
+      align-items: center;
+    }
+    .featured-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      flex-shrink: 0;
+    }
+    .featured-swatch {
+      width: 36px; height: 36px;
+      border: 2px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    }
+    .featured-item:hover .featured-swatch { transform: scale(1.08); border-color: rgba(255,255,255,0.35); }
+    .featured-item:active .featured-swatch { transform: scale(0.94); }
+    /* Active featured box — mirrors the recents' selection ring. */
+    .featured-item.active .featured-swatch {
+      border-color: #fff;
+      box-shadow: 0 0 8px rgba(93,211,158,0.45);
+    }
+    .featured-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-align: center;
+      max-width: 42px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1;
+    }
+
     #brush-label {
       font-size: var(--fs-xs);
       color: var(--text-muted);
@@ -1307,6 +1350,7 @@
     <div id="current-name"></div>
   </div>
   <div class="tb-sep"></div>
+  <div class="featured-bar" id="featured-bar"></div>
   <div class="quick-bar" id="quick-bar"></div>
   <label id="brush-label">Brush</label>
   <input id="brush-size" type="range" min="1" max="15" value="4" />
@@ -2291,8 +2335,17 @@ let brushSize = 4;
 // ELEMENT SELECTOR
 // =============================================================================
 
-let recentIds = [1, 3, 6];
+// Default recents exclude the featured ids (3 Water, 6 Fire) — those live in
+// the always-visible #featured-bar, so seeding them here would duplicate them.
+let recentIds = [1, 13, 7]; // Wall, Stone, Wood
 const MAX_RECENT = 3;
+
+// Featured elements — a fixed, always-visible set surfaced as labeled color
+// boxes in the toolbar (Water, Fire, Plant, Acid). Colors/names are read from
+// speciesById so they can never drift from the SPECIES palette. featuredLimit
+// is trimmed by fitToolbar only after all recents have collapsed.
+const FEATURED_IDS = [3, 6, 11, 12]; // Water, Fire, Plant, Acid
+let featuredLimit = FEATURED_IDS.length;
 // How many recent-species swatches the quick bar is currently allowed to show.
 // fitToolbar() shrinks this whenever the toolbar would overflow the viewport
 // (narrow phones, especially when the send/discard fab-bar is visible) and
@@ -2306,6 +2359,7 @@ const currentNameEl   = document.getElementById("current-name");
 const currentElBtn    = document.getElementById("current-el");
 const toolbarEl       = document.getElementById("toolbar");
 const quickBar        = document.getElementById("quick-bar");
+const featuredBar     = document.getElementById("featured-bar");
 const pickerOverlay   = document.getElementById("picker-overlay");
 const pickerGrid      = document.getElementById("picker-grid");
 const brushSlider     = document.getElementById("brush-size");
@@ -2417,8 +2471,35 @@ function refreshQuickBar() {
   eraser.className = "quick-btn eraser";
   eraser.title = "Erase";
   eraser.textContent = "\uD83E\uDDF9";
-  eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); });
+  eraser.addEventListener("click", () => selectSpecies(0));
   quickBar.appendChild(eraser);
+}
+
+// Render the fixed featured-element boxes (Water, Fire, Plant, Acid). Each is a
+// labeled color box that selects its element via selectSpecies on tap, with the
+// same selection ring as the recents. featuredLimit may be < FEATURED_IDS.length
+// on narrow viewports (see fitToolbar); trimmed boxes stay reachable via the
+// picker. Idempotent — safe to call repeatedly.
+function refreshFeaturedBar() {
+  if (!featuredBar) return;
+  featuredBar.innerHTML = "";
+  FEATURED_IDS.slice(0, featuredLimit).forEach(id => {
+    const sp = speciesById[id];
+    if (!sp) return;
+    const item = document.createElement("div");
+    item.className = "featured-item" + (id === selectedSpecies ? " active" : "");
+    item.title = sp.name;
+    const swatch = document.createElement("div");
+    swatch.className = "featured-swatch";
+    swatch.style.background = sp.color;
+    const label = document.createElement("div");
+    label.className = "featured-label";
+    label.textContent = sp.name;
+    item.appendChild(swatch);
+    item.appendChild(label);
+    item.addEventListener("click", () => selectSpecies(id));
+    featuredBar.appendChild(item);
+  });
 }
 
 // Adaptive toolbar fit. The fab-bar (.tb-right) reserves a fixed 104px
@@ -2442,7 +2523,9 @@ function fitToolbar() {
     const brushLabelEl = document.getElementById("brush-label");
 
     // Reset to the most-permissive state and re-measure from there so the
-    // recents/brush-label come back as soon as space is available again.
+    // featured boxes/recents/brush-label come back as soon as space allows.
+    featuredLimit = FEATURED_IDS.length;
+    refreshFeaturedBar();
     let limit = MAX_RECENT;
     recentLimit = limit;
     refreshQuickBar();
@@ -2469,10 +2552,20 @@ function fitToolbar() {
       return false;
     }
 
+    // 1. Collapse the rotating recents first.
     while (limit > 0 && overflowing()) {
       limit--;
       recentLimit = limit;
       refreshQuickBar();
+    }
+
+    // 2. Then trim featured boxes from the right — they outrank recents, but
+    //    any hidden featured element is still reachable through the picker.
+    let fLimit = FEATURED_IDS.length;
+    while (fLimit > 0 && overflowing()) {
+      fLimit--;
+      featuredLimit = fLimit;
+      refreshFeaturedBar();
     }
 
     if (brushLabelEl) {
@@ -2502,18 +2595,21 @@ function fitToolbar() {
 }
 
 function selectSpecies(id) {
-  if (id === 0) { selectedSpecies = 0; refreshCurrent(); return; }
+  if (id === 0) { selectedSpecies = 0; refreshCurrent(); refreshFeaturedBar(); refreshQuickBar(); return; }
   const prev = selectedSpecies;
   selectedSpecies = id;
-  if (prev !== 0 && prev !== id) {
+  // Featured ids live permanently in #featured-bar, so they never enter the
+  // rotating recents (prevents the same element showing up in both bars).
+  if (prev !== 0 && prev !== id && !FEATURED_IDS.includes(prev)) {
     recentIds = recentIds.filter(r => r !== id && r !== prev);
     recentIds.unshift(prev);
-    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
   } else {
     recentIds = recentIds.filter(r => r !== id);
-    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
   }
+  recentIds = recentIds.filter(r => !FEATURED_IDS.includes(r));
+  if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
   refreshCurrent();
+  refreshFeaturedBar();
   refreshQuickBar();
 }
 
@@ -2571,6 +2667,7 @@ brushSlider.addEventListener("input", () => {
 });
 if (brushValueEl) brushValueEl.textContent = String(brushSize);
 refreshCurrent();
+refreshFeaturedBar();
 refreshQuickBar();
 fitToolbar();
 window.addEventListener("resize", fitToolbar);
