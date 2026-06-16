@@ -982,6 +982,69 @@
       background: var(--accent);
       transition: width 0.3s ease-out;
     }
+    /* App description under the wordmark — context for first-time visitors. */
+    #loading-overlay .loader-tagline {
+      font-size: var(--fs-sm);
+      color: var(--text-muted);
+      max-width: min(420px, calc(100% - 48px));
+      text-align: center;
+      line-height: 1.5;
+    }
+    /* "Step N of M" indicator above the bar. */
+    #loading-overlay .loader-step {
+      font-size: var(--fs-xs);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      min-height: 1em;
+    }
+    #loading-overlay .loader-step:empty { display: none; }
+    /* Rotating "did you know" tip. */
+    #loading-overlay .loader-tip {
+      font-size: var(--fs-sm);
+      color: var(--text-muted);
+      max-width: min(380px, calc(100% - 48px));
+      text-align: center;
+      line-height: 1.5;
+      min-height: 2.7em;
+      transition: opacity 0.3s ease;
+    }
+    #loading-overlay .loader-tip.tip-hidden { opacity: 0; }
+    #loading-overlay .loader-tip[hidden] { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      #loading-overlay .loader-tip { transition: none; }
+    }
+    /* Community activity strip — fail-soft, hidden until ranking data lands. */
+    #loading-overlay .loader-social {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      margin-top: var(--sp-1);
+      padding-top: var(--sp-3);
+      border-top: 1px solid var(--border);
+      max-width: min(420px, calc(100% - 48px));
+      text-align: center;
+    }
+    #loading-overlay .loader-social[hidden] { display: none; }
+    #loading-overlay .loader-social .ls-count {
+      font-size: var(--fs-sm);
+      color: var(--text);
+      font-weight: 600;
+    }
+    #loading-overlay .loader-social .ls-top {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: var(--sp-2);
+      font-size: var(--fs-sm);
+      color: var(--text-muted);
+    }
+    #loading-overlay .loader-social .ls-name { white-space: nowrap; }
+    #loading-overlay .loader-social .ls-recent {
+      font-size: var(--fs-xs);
+      color: var(--text-faint);
+    }
 
     /* ── Auth / sign-in failure modal ─────────────────
        Shown when a wallet/sign-in operation fails (sending a
@@ -1230,8 +1293,12 @@
 
 <div id="loading-overlay">
   <div class="loader-title">Falling Sands</div>
+  <div class="loader-tagline">A collaborative pixel sandbox — draw with sand, water, fire and more, and watch the physics play out with everyone else, live on-chain.</div>
+  <div class="loader-step" id="loader-step"></div>
   <div class="loader-track"><div class="loader-fill" id="loader-fill"></div></div>
-  <div class="loader-status" id="loader-status">Loading...</div>
+  <div class="loader-status" id="loader-status" aria-live="polite">Loading...</div>
+  <div class="loader-tip" id="loader-tip" aria-hidden="true"></div>
+  <div class="loader-social" id="loader-social" aria-hidden="true" hidden></div>
   <div class="loader-error" id="loader-error" hidden>
     <div class="loader-error-msg" id="loader-error-msg"></div>
     <div class="loader-error-codebox" id="loader-error-codebox" hidden>
@@ -1616,10 +1683,178 @@ if (_aeModal) {
 const _loaderOverlay = document.getElementById("loading-overlay");
 const _loaderFill = document.getElementById("loader-fill");
 const _loaderStatus = document.getElementById("loader-status");
+const _loaderStepEl = document.getElementById("loader-step");
+const _loaderTipEl = document.getElementById("loader-tip");
+const _loaderSocialEl = document.getElementById("loader-social");
 
 function setLoading(pct, msg) {
   if (_loaderFill) _loaderFill.style.width = pct + "%";
   if (_loaderStatus) _loaderStatus.textContent = msg;
+}
+
+// ── Plain-language phase model ────────────────────────────────────────────
+// Centralizes the friendly, user-facing copy + step number for each startup
+// phase, so the overlay can show "Step N of M" alongside the bar instead of
+// the engineering shorthand the call sites used to pass. The chain-readiness
+// branch in pollChainReady() is always the final step; it passes its own live
+// detail message (block X / Y, etc.) via setLoaderStep(4) + setLoading().
+const LOAD_TOTAL_STEPS = 4;
+const LOAD_PHASES = {
+  ENGINE:  { step: 1, label: "Loading the simulation engine…" },
+  CONNECT: { step: 2, label: "Connecting to other players…" },
+  CANVAS:  { step: 3, label: "Rebuilding the shared canvas…" },
+  CATCHUP: { step: 4, label: "Catching up to the latest drawings…" },
+  READY:   { step: 4, label: "Almost ready…" },
+};
+
+function setLoaderStep(n) {
+  if (_loaderStepEl) _loaderStepEl.textContent = n ? ("Step " + n + " of " + LOAD_TOTAL_STEPS) : "";
+}
+
+// Drive the bar from a phase key. `overrideMsg` (optional) replaces the
+// canonical label when a call site has live detail to surface.
+function setLoadingPhase(phaseKey, pct, overrideMsg) {
+  const ph = LOAD_PHASES[phaseKey] || null;
+  setLoaderStep(ph ? ph.step : 0);
+  setLoading(pct, overrideMsg != null ? overrideMsg : (ph ? ph.label : ""));
+}
+
+// ── Rotating "did you know" tips ──────────────────────────────────────────
+// Static set covering element behaviours, controls, and scoring. Decorative
+// only; torn down by tryDismissLoader()/showLoaderError().
+const LOADER_TIPS = [
+  "Sand falls and piles up — water flows and finds its level.",
+  "Water douses fire, and fire spreads through wood and plants.",
+  "Plants creep toward water and bloom when they reach it.",
+  "Tap the element swatch to browse every material in the palette.",
+  "Draw locally, then tap the ✓ to commit your strokes on-chain.",
+  "Everyone runs the same simulation — your drawings appear for all players.",
+  "Earn points for every stroke, plus a bonus the first time you use an element.",
+  "Draw every day to build a streak and climb the leaderboard.",
+];
+let _tipTimer = null;
+let _tipIdx = 0;
+function startLoaderTips() {
+  if (!_loaderTipEl || !LOADER_TIPS.length || _tipTimer != null) return;
+  if (_loaderDismissed || _loaderErrored) return;
+  const reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  _loaderTipEl.textContent = LOADER_TIPS[0];
+  _tipTimer = setInterval(() => {
+    _tipIdx = (_tipIdx + 1) % LOADER_TIPS.length;
+    if (reduce) {
+      _loaderTipEl.textContent = LOADER_TIPS[_tipIdx];
+      return;
+    }
+    _loaderTipEl.classList.add("tip-hidden");
+    setTimeout(() => {
+      if (!_loaderTipEl) return;
+      _loaderTipEl.textContent = LOADER_TIPS[_tipIdx];
+      _loaderTipEl.classList.remove("tip-hidden");
+    }, 300);
+  }, 4500);
+}
+function stopLoaderTips() {
+  if (_tipTimer != null) { clearInterval(_tipTimer); _tipTimer = null; }
+}
+
+// ── Community activity strip ──────────────────────────────────────────────
+// Fetches the public ranking (same endpoint the in-app leaderboard uses) and
+// surfaces artist count, top contributors, and recency. Fail-soft: any error
+// keeps the strip hidden, retries up to twice, then gives up silently. Never
+// touches the loader gates, so it can't affect dismissal.
+let _socialRetryTimer = null;
+let _socialNamesWarmed = false;
+
+function _loaderEsc(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function _loaderNameFor(pubkey) {
+  try {
+    if (window.UsernodeUsernames && window.UsernodeUsernames.getUsernameSync) {
+      return window.UsernodeUsernames.getUsernameSync(pubkey);
+    }
+  } catch (_) {}
+  return "user_" + (pubkey ? String(pubkey).slice(-6) : "??????");
+}
+function _loaderRelTime(ms) {
+  if (!(ms >= 0)) return "";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return "moments ago";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + (m === 1 ? " minute ago" : " minutes ago");
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + (h === 1 ? " hour ago" : " hours ago");
+  const d = Math.floor(h / 24);
+  return d + (d === 1 ? " day ago" : " days ago");
+}
+function renderSocialStrip(data) {
+  if (!_loaderSocialEl || _loaderDismissed || _loaderErrored) return;
+  const total = data && typeof data.totalPlayers === "number" ? data.totalPlayers : 0;
+  const top = data && Array.isArray(data.top) ? data.top.slice(0, 3) : [];
+
+  if (total <= 0 && !top.length) {
+    _loaderSocialEl.innerHTML = '<div class="ls-count">Be the first to draw on this canvas.</div>';
+    _loaderSocialEl.hidden = false;
+    return;
+  }
+
+  const artists = total === 1 ? "1 artist has" : total.toLocaleString() + " artists have";
+  let html = '<div class="ls-count">🎨 ' + artists + " painted on this canvas</div>";
+
+  if (top.length) {
+    const medals = ["🥇", "🥈", "🥉"];
+    let names = "";
+    for (let i = 0; i < top.length; i++) {
+      names += '<span class="ls-name">' + medals[i] + " " + _loaderEsc(_loaderNameFor(top[i].pubkey)) + "</span>";
+    }
+    html += '<div class="ls-top">' + names + "</div>";
+  }
+
+  let lastTs = 0;
+  for (const r of top) {
+    if (r && typeof r.lastTs === "number" && r.lastTs > lastTs) lastTs = r.lastTs;
+  }
+  if (lastTs > 0) {
+    const ago = _loaderRelTime(Date.now() - lastTs);
+    if (ago) html += '<div class="ls-recent">last drawing ' + ago + "</div>";
+  }
+
+  _loaderSocialEl.innerHTML = html;
+  _loaderSocialEl.hidden = false;
+
+  // Warm the username cache once, then re-render so names aren't all
+  // user_<last6> fallbacks. Guarded so the re-render can't loop.
+  if (!_socialNamesWarmed && top.length) {
+    _socialNamesWarmed = true;
+    try {
+      if (window.UsernodeUsernames && window.UsernodeUsernames.refresh) {
+        window.UsernodeUsernames.refresh()
+          .then(() => { if (!_loaderDismissed && !_loaderErrored) renderSocialStrip(data); })
+          .catch(() => {});
+      }
+    } catch (_) {}
+  }
+}
+function loadSocialStrip(attempt) {
+  attempt = attempt || 0;
+  if (_loaderDismissed || _loaderErrored) return;
+  fetch("/__sands/leaderboard?scope=all&limit=3", { cache: "no-store" })
+    .then((resp) => {
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      return resp.json();
+    })
+    .then((data) => { renderSocialStrip(data); })
+    .catch(() => {
+      // Endpoint not ready yet (503 during cold-boot ingest) or transient —
+      // retry up to twice, then give up without ever showing an error.
+      if (attempt < 2 && !_loaderDismissed && !_loaderErrored) {
+        _socialRetryTimer = setTimeout(() => loadSocialStrip(attempt + 1), 2000);
+      }
+    });
+}
+function stopSocialStrip() {
+  if (_socialRetryTimer != null) { clearTimeout(_socialRetryTimer); _socialRetryTimer = null; }
 }
 
 // Two-gate dismissal: the loader stays up until BOTH the engine is
@@ -1829,6 +2064,14 @@ function showLoaderError(arg) {
   _loaderErrored = true;
   if (_loaderTrackEl) _loaderTrackEl.style.display = "none";
 
+  // Stand the decorative chrome down so only the recovery UI competes for
+  // attention, and stop their timers/retries.
+  stopLoaderTips();
+  stopSocialStrip();
+  if (_loaderStepEl) _loaderStepEl.textContent = "";
+  if (_loaderTipEl) _loaderTipEl.hidden = true;
+  if (_loaderSocialEl) _loaderSocialEl.hidden = true;
+
   // Escalate guidance after repeated failed reloads in the same session —
   // the real fix is often "keep waiting", which a blind reload can't convey.
   let retries = 0;
@@ -1919,9 +2162,13 @@ function tryDismissLoader() {
   if (_loaderTestForce) return; // dev-only: keep a forced ?loaderTest state visible
   if (!_engineLoaderReady || !_chainLoaderReady) return;
   _loaderDismissed = true;
+  // Tear down the decorative loaders so no timer/retry outlives the overlay.
+  stopLoaderTips();
+  stopSocialStrip();
   // Successful boot — clear the escalating-retry counter so a future
   // unrelated failure starts its guidance fresh.
   try { sessionStorage.removeItem("sands:loadRetries"); } catch (_) {}
+  setLoaderStep(0);
   setLoading(100, "Ready!");
   if (_loaderOverlay) {
     _loaderOverlay.classList.add("fade-out");
@@ -2033,6 +2280,10 @@ async function pollChainReady() {
     // engine → Connecting to server → Server loading → Loading snapshot
     // → Catching up).
     if (_engineLoaderReady) {
+      // Engine is up; everything left is the final "syncing with the network"
+      // step. Keep the live detail (block X / Y) but reword to plain language
+      // and pin the step indicator to the last step.
+      setLoaderStep(LOAD_TOTAL_STEPS);
       if (explorerDown && !snap.explorerHasBeenOk) {
         // Highest precedence: every configured host is down on a fresh
         // boot, which blocks cache backfill — the actual problem worth
@@ -2045,27 +2296,27 @@ async function pollChainReady() {
           hostList = String(explorer.host);
         }
         setLoading(80, hostList
-          ? "Explorer unreachable\u2026 (" + hostList + ")"
-          : "Explorer unreachable\u2026");
+          ? "Reconnecting to the network\u2026 (" + hostList + ")"
+          : "Reconnecting to the network\u2026");
       } else if (!streamOk) {
         setLoading(95, "Connecting to live updates\u2026");
       } else if (snap.status === "Connecting") {
-        setLoading(80, "Node connecting to network\u2026");
+        setLoading(80, "Finding other players\u2026");
       } else if (snap.status === "Connected") {
-        setLoading(85, "Node joining network\u2026");
+        setLoading(85, "Joining the network\u2026");
       } else if (snap.status === "Syncing") {
         const our = snap.bestTipHeight;
         const peer = snap.peerBestTipHeight;
         if (typeof our === "number" && typeof peer === "number" && peer > 0) {
           const pct = Math.max(85, Math.min(99, 85 + (our / peer) * 14));
-          setLoading(Math.round(pct), "Node syncing chain\u2026 block " + our + " / " + peer);
+          setLoading(Math.round(pct), "Syncing the blockchain\u2026 block " + our + " / " + peer);
         } else {
-          setLoading(85, "Node syncing chain\u2026");
+          setLoading(85, "Syncing the blockchain\u2026");
         }
       } else if (snap.status === "unreachable") {
-        setLoading(80, "Waiting for node\u2026");
+        setLoading(80, "Waiting for the network\u2026");
       } else {
-        setLoading(80, "Waiting for node\u2026");
+        setLoading(80, "Waiting for the network\u2026");
       }
     }
 
@@ -2077,6 +2328,13 @@ async function pollChainReady() {
 // WASM/WS. By the time the engine finishes replay, the chain poll has
 // usually already hit `Synced` and the loader dismisses promptly.
 pollChainReady();
+
+// Engage the enriched loading chrome. Both are decorative and fail-soft:
+// tips rotate on a timer; the activity strip fetches the public ranking and
+// stays hidden until/unless it returns data. Neither gates dismissal, and
+// tryDismissLoader()/showLoaderError() tear them both down.
+startLoaderTips();
+loadSocialStrip();
 
 // Global loader watchdog: the single backstop that guarantees the overlay
 // terminates (dismissed or showing an actionable error) no matter which
@@ -3340,7 +3598,7 @@ function handleMessage(event) {
         }
       }
 
-      setLoading(50, "Loading snapshot...");
+      setLoadingPhase("CANVAS", 50);
 
       // Load snapshot
       if (msg.snapshot) {
@@ -3383,7 +3641,7 @@ function handleMessage(event) {
         const wallTick = timestampToTick(Date.now());
         const targetTick = msg.frozen ? simTick : Math.min(wallTick, clientActiveUntilTick);
         if (targetTick > simTick) {
-          setLoading(70, "Catching up...");
+          setLoadingPhase("CATCHUP", 70);
           console.log(`[sands-init] fast-forwarding ${targetTick - simTick} ticks to catch up`);
           fastForwardTo(targetTick);
         }
@@ -3401,7 +3659,7 @@ function handleMessage(event) {
       if (_chainLoaderReady) {
         setLoading(100, "Ready!");
       } else {
-        setLoading(80, "Waiting for node\u2026");
+        setLoadingPhase("READY", 80, "Almost ready\u2026 syncing with the network");
       }
       tryDismissLoader();
 
@@ -3474,10 +3732,11 @@ function handleMessage(event) {
       }
       _bootStage = "replay";
       const pct = Math.round(prog * 100);
+      const base = "Rebuilding the shared canvas\u2026 " + pct + "%";
       const text = _loaderSlow
-        ? "Preparing the canvas\u2026 " + pct + "% \u00b7 first load can take a few minutes"
-        : "Preparing the canvas\u2026 " + pct + "%";
-      setLoading(Math.min(pct, 45), text);
+        ? base + " \u00b7 first load can take a couple of minutes"
+        : base;
+      setLoadingPhase("CANVAS", Math.min(pct, 45), text);
 
     } else if (msg.type === "tx") {
       addPendingTx(msg);
@@ -3604,7 +3863,7 @@ function startRound() {
   try {
     _bootStage = "wasm";
     markEngineProgress();
-    setLoading(10, "Loading simulation engine...");
+    setLoadingPhase("ENGINE", 10);
     statusEl.textContent = "Loading WASM...";
     const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
     universe = wasm.Universe.new(WIDTH, HEIGHT);
@@ -3624,7 +3883,7 @@ function startRound() {
 
     _bootStage = "ws";
     markEngineProgress();
-    setLoading(30, "Connecting to server...");
+    setLoadingPhase("CONNECT", 30);
     statusEl.textContent = "Connecting...";
     scheduleConnect();
   } catch (e) {
