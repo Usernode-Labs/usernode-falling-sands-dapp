@@ -1606,6 +1606,24 @@
       user-select: text;
       -webkit-user-select: text;
     }
+    /* Human-readable failure reason, shown under the headline. Muted +
+       monospace so the technical detail reads as secondary diagnostic info,
+       not an alarming second error line. Selectable so it can be copied by
+       hand even without the Copy button. */
+    #loading-overlay .loader-error-detail {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.45;
+      word-break: break-word;
+      max-height: 8.5em;
+      overflow-y: auto;
+      user-select: text;
+      -webkit-user-select: text;
+      margin-top: calc(-1 * var(--sp-1));
+    }
+    #loading-overlay .loader-error-detail[hidden] { display: none; }
     #loading-overlay .loader-retry-btn {
       font-family: var(--font-ui);
       font-size: var(--fs-md);
@@ -1722,6 +1740,7 @@
   <div class="loader-social" id="loader-social" aria-hidden="true" hidden></div>
   <div class="loader-error" id="loader-error" hidden>
     <div class="loader-error-msg" id="loader-error-msg"></div>
+    <div class="loader-error-detail" id="loader-error-detail" hidden></div>
     <div class="loader-error-codebox" id="loader-error-codebox" hidden>
       <span class="lec-label">Code</span>
       <code class="lec-code" id="loader-error-code">—</code>
@@ -2400,6 +2419,7 @@ const WS_INIT_WAIT_MS = 8000;
 
 const _loaderError = document.getElementById("loader-error");
 const _loaderErrorMsg = document.getElementById("loader-error-msg");
+const _loaderErrorDetail = document.getElementById("loader-error-detail");
 const _loaderRetryBtn = document.getElementById("loader-retry-btn");
 const _loaderOfflineBtn = document.getElementById("loader-offline-btn");
 const _loaderErrorCodebox = document.getElementById("loader-error-codebox");
@@ -2435,6 +2455,11 @@ let _loaderSlow = false;
 // Dev-only: when a ?loaderTest= state is forced, suppress the normal
 // dismissal so the forced error card stays on screen for inspection.
 let _loaderTestForce = false;
+// Most recent composed WASM-load failure detail (from initWasm's catch).
+// The engine-stall watchdog raises a WASM-phase card WITHOUT a detail arg,
+// so deriveLoadError falls back to this so the stall card still names the
+// real reason when one was captured.
+let _lastWasmErrorDetail = "";
 
 // Pick the most accurate phase for a stall that happened before the engine
 // came up. A hard chain-down cause (explorer unreachable on a fresh boot,
@@ -2528,6 +2553,19 @@ function deriveLoadError(phase, detail) {
     }
   }
 
+  // WASM phase fallbacks so the visible Detail line is never empty: prefer
+  // the real reason captured by initWasm's catch (the stall watchdog and the
+  // ?loaderTest=wasm hook both raise this phase without a detail arg), then a
+  // synthesized human line describing a stall before instantiation.
+  if (!detailLine && phase === "WASM") {
+    if (_lastWasmErrorDetail) {
+      detailLine = _lastWasmErrorDetail;
+    } else {
+      detailLine = "The engine module didn't finish loading (no error was thrown — "
+        + "it likely stalled before the WebAssembly module could instantiate).";
+    }
+  }
+
   // Offline play is only meaningful when there's a local snapshot to draw
   // against: the chain-dependent phases, or any phase where the engine is
   // already up and only the chain gate is holding the overlay.
@@ -2577,7 +2615,7 @@ function deriveLoadError(phase, detail) {
   try { lines.push("Time: " + new Date().toISOString()); } catch (_) {}
   const clipboard = lines.join("\n");
 
-  return { code, message, clipboard, allowOffline };
+  return { code, message, clipboard, allowOffline, detailLine };
 }
 
 // Surface a terminal, copyable error inside the overlay itself. The
@@ -2598,6 +2636,7 @@ function showLoaderError(arg) {
       code: info.code,
       clipboard: info.clipboard,
       allowOffline: arg.allowOffline != null ? arg.allowOffline : info.allowOffline,
+      detailLine: info.detailLine,
     };
   } else {
     opts = arg || {};
@@ -2626,6 +2665,20 @@ function showLoaderError(arg) {
 
   if (_loaderStatus) _loaderStatus.textContent = "Something went wrong";
   if (_loaderErrorMsg) _loaderErrorMsg.textContent = message;
+
+  // Visible, human-readable failure reason under the headline. Empty/legacy
+  // (string) calls hide it; a phase-derived detail (incl. the WASM fallback)
+  // shows it. This is the on-screen "Detail" line the report referenced.
+  if (_loaderErrorDetail) {
+    const dl = opts.detailLine;
+    if (dl) {
+      _loaderErrorDetail.textContent = dl;
+      _loaderErrorDetail.hidden = false;
+    } else {
+      _loaderErrorDetail.textContent = "";
+      _loaderErrorDetail.hidden = true;
+    }
+  }
 
   if (_loaderErrorCodebox) {
     if (opts.code) {
@@ -2973,7 +3026,12 @@ startLoaderWatchdog();
         showLoaderError({ phase: "EXPLORER" });
         break;
       case "wasm":
-        showLoaderError({ phase: "WASM" });
+        // Representative real-failure detail so the forced card exercises the
+        // full enriched shape (kind/HTTP/content-type/streaming/asset) testers
+        // would see on an actual streaming-MIME compile rejection.
+        showLoaderError({ phase: "WASM", detail: "WASM compile failed: WebAssembly.instantiateStreaming "
+          + "rejected the response [kind=compile; HTTP 200; content-type=application/octet-stream; "
+          + "streaming=true; asset=/sandtable_bg.wasm]" });
         break;
       case "lib":
         // Simulates a CDN library (regl/pako) failing both hosts.
@@ -4539,6 +4597,9 @@ function startRound() {
       if (d.url) parts.push("asset=" + d.url);
       if (parts.length) detail += " [" + parts.join("; ") + "]";
     }
+    // Stash for the engine-stall watchdog, which raises a WASM-phase card
+    // without a detail arg (deriveLoadError falls back to this).
+    _lastWasmErrorDetail = detail;
     showLoaderError({ phase: "WASM", detail });
     showError("WASM load failed: " + detail);
     console.error(e);
