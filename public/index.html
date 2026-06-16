@@ -4808,6 +4808,13 @@ window.addEventListener("touchend", (e) => {
   if (e.touches.length === 0) endPaint();
 });
 
+// OS-cancelled touches (incoming call, system gesture, app switch). Clean up
+// both pinch and paint state so the canvas never gets stuck.
+window.addEventListener("touchcancel", () => {
+  pinchState = null;
+  endPaint();
+});
+
 // ── Info overlay toggle ─────────────────────────────────────────────────────
 (function () {
   const btn = document.getElementById("info-btn");
