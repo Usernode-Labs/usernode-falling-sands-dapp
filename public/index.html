@@ -759,6 +759,13 @@
       background: var(--surface-2);
       border-radius: 50%;
     }
+    #clear-canvas-btn {
+      font-size: var(--fs-md);
+      background: var(--surface-2);
+      border-radius: 50%;
+      color: var(--text-muted);
+    }
+    #clear-canvas-btn:hover { color: var(--danger-soft); }
 
     /* ── Header score chip ───────────────────────────── */
     #score-chip {
@@ -1473,6 +1480,7 @@
   <input id="brush-size" type="range" min="1" max="15" value="4" />
   <span id="brush-value">4</span>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
+  <button class="quick-btn" id="clear-canvas-btn" type="button" title="Clear canvas">&#x1F5D1;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
   <!-- The .tb-right slot is always rendered so the toolbar layout
        doesn't snap when the user starts/finishes drawing, but its
@@ -4606,6 +4614,20 @@ btnDiscard.addEventListener("click", () => {
   usedBudget = 0;
   overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   refreshFabs();
+});
+
+document.getElementById("clear-canvas-btn").addEventListener("click", () => {
+  // Clear pending local strokes
+  pendingStrokes = [];
+  usedBudget = 0;
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  refreshFabs();
+  // Zero out the WASM simulation grid
+  if (universe && wasmMemory && FRAME_SIZE) {
+    new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE).fill(0);
+    new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE).fill(0);
+    new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE).fill(0);
+  }
 });
 
 function startPaint(e) {
