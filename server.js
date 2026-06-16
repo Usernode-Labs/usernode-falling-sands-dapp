@@ -226,6 +226,36 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     snapshotDir: SNAPSHOT_DIR,
   });
   engine.attachWebSocket(server);
+
+  // Start listening only after the WebSocket handler is attached so the
+  // HTTP server never accepts upgrade requests before the ws.Server exists.
+  // Node.js destroys unhandled upgrade sockets immediately, causing every
+  // client WS attempt to fail and showing SND-LOAD-WS within seconds of
+  // page load. SV's waitForHealthy probe polls /health and will wait here;
+  // once the port opens, /health responds 200 and traffic is routed.
+  await new Promise((resolve) => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`\nFalling Sands server running at http://localhost:${PORT}`);
+
+      const nets = require("os").networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const iface of nets[name]) {
+          if (iface.family === "IPv4" && !iface.internal) {
+            console.log(`   LAN: http://${iface.address}:${PORT}`);
+          }
+        }
+      }
+
+      console.log(`  App pubkey:    ${process.env.APP_PUBKEY ? APP_PUBKEY.slice(0, 24) + "…" : "(default sentinel — local-dev only)"}`);
+      console.log(`  Admin pubkey:  ${ADMIN_PUBKEY ? ADMIN_PUBKEY.slice(0, 24) + "…" : "(unset)"}`);
+      console.log(`  Node RPC:      ${NODE_RPC_URL}${USE_NODE_STREAM ? " (direct-node SSE on)" : ""}`);
+      console.log(`  Snapshot dir:  ${SNAPSHOT_DIR}`);
+      console.log(`  Persistence:   ${process.env.DATABASE_URL ? "Postgres" : "disk-only (DATABASE_URL unset)"}`);
+      console.log(`  Mode:          ${LOCAL_DEV ? "LOCAL DEV (mock API)" : "production"}\n`);
+      resolve();
+    });
+  });
+
   await engine.init();
   engine.startTickLoop();
 
@@ -546,23 +576,7 @@ async function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// ── Start ────────────────────────────────────────────────────────────────────
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`\nFalling Sands server running at http://localhost:${PORT}`);
-
-  const nets = require("os").networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const iface of nets[name]) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        console.log(`   LAN: http://${iface.address}:${PORT}`);
-      }
-    }
-  }
-
-  console.log(`  App pubkey:    ${process.env.APP_PUBKEY ? APP_PUBKEY.slice(0, 24) + "…" : "(default sentinel — local-dev only)"}`);
-  console.log(`  Admin pubkey:  ${ADMIN_PUBKEY ? ADMIN_PUBKEY.slice(0, 24) + "…" : "(unset)"}`);
-  console.log(`  Node RPC:      ${NODE_RPC_URL}${USE_NODE_STREAM ? " (direct-node SSE on)" : ""}`);
-  console.log(`  Snapshot dir:  ${SNAPSHOT_DIR}`);
-  console.log(`  Persistence:   ${process.env.DATABASE_URL ? "Postgres" : "disk-only (DATABASE_URL unset)"}`);
-  console.log(`  Mode:          ${LOCAL_DEV ? "LOCAL DEV (mock API)" : "production"}\n`);
-});
+// server.listen() has been moved into the async init() IIFE above,
+// immediately after engine.attachWebSocket(server). This guarantees the
+// ws.Server is installed before the first HTTP connection is accepted,
+// preventing the SND-LOAD-WS race on cold boots.

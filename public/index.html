@@ -2521,6 +2521,9 @@ function tryDismissLoader() {
   if (_loaderTestForce) return; // dev-only: keep a forced ?loaderTest state visible
   if (!_engineLoaderReady || !_chainLoaderReady) return;
   _loaderDismissed = true;
+  // Reset the WS boot patience clock so any future reconnect (post-session)
+  // doesn't inherit the startup timestamp and give up too early.
+  wsFirstAttemptMs = 0;
   // Tear down the decorative loaders so no timer/retry outlives the overlay.
   stopLoaderTips();
   stopSocialStrip();
@@ -3918,6 +3921,13 @@ const WS_POOL_SIZE     = 3;
 const WS_ROUND_TIMEOUT = 800;
 const WS_ROUND_GAP     = 100;
 const WS_MAX_ROUNDS    = 20;
+// After WS_MAX_ROUNDS all fail, enter a slow-retry phase rather than
+// immediately showing the error. This covers any residual timing window
+// where the server is still initialising (chain fetch / cold replay) after
+// the page has already loaded. Only the hard error surfaces after
+// WS_BOOT_PATIENCE_MS of total failed attempts.
+const WS_SLOW_RETRY_INTERVAL_MS = 5_000;
+const WS_BOOT_PATIENCE_MS       = 3 * 60 * 1000;
 
 // Application-level heartbeat. The browser WS API doesn't surface
 // protocol-level pings/pongs to JS, so we send our own. Server already
@@ -3940,6 +3950,7 @@ const WS_QUIET_AFTER_MS        = 12_000;
 let wsRound = 0;
 let wsTotalAttempts = 0;
 let lastWsActivityMs = 0;
+let wsFirstAttemptMs = 0; // set on first startRound(); reset by tryDismissLoader()
 
 const debugLines = [];
 function dbg(msg) {
@@ -4150,6 +4161,7 @@ let simInterval = null;
 
 function startRound() {
   if (document.visibilityState === "hidden") return;
+  wsFirstAttemptMs = wsFirstAttemptMs || Date.now();
   wsRound++;
   const rid = wsRound;
   dbg(`round ${rid}`);
@@ -4244,9 +4256,23 @@ function startRound() {
       dbg("Gave up after " + WS_MAX_ROUNDS + " rounds");
       statusEl.className = "err";
       statusEl.textContent = "Connection failed — tap to retry";
-      // If the loader is still up, the status bar is occluded by it — show
-      // the failure (with a working Retry) inside the overlay instead.
+      // If the loader is still up and we haven't exhausted the boot
+      // patience window, enter slow-retry mode: update the loader text,
+      // reset the stall clock so the stall detector doesn't race us, then
+      // try again every WS_SLOW_RETRY_INTERVAL_MS. Only show the hard
+      // SND-LOAD-WS card after WS_BOOT_PATIENCE_MS of total failed attempts.
       if (!_loaderDismissed && !_engineLoaderReady) {
+        const elapsed = Date.now() - (wsFirstAttemptMs || Date.now());
+        if (elapsed < WS_BOOT_PATIENCE_MS) {
+          dbg("slow-retry mode — server still starting?");
+          if (_loaderStatus) {
+            _loaderStatus.textContent = "Server is loading — still connecting…";
+          }
+          markEngineProgress(); // reset stall clock so stall detector doesn't race
+          wsRound = 0;
+          setTimeout(startRound, WS_SLOW_RETRY_INTERVAL_MS);
+          return;
+        }
         showLoaderError({ phase: "WS" });
       }
       document.body.addEventListener("click", () => { wsRound = 0; startRound(); }, { once: true });
