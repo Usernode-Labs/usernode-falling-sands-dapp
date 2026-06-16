@@ -808,6 +808,13 @@
       background: var(--surface-2);
       border-radius: 50%;
     }
+    #clear-canvas-btn {
+      font-size: var(--fs-md);
+      background: var(--surface-2);
+      border-radius: 50%;
+      color: var(--text-muted);
+    }
+    #clear-canvas-btn:hover { color: var(--danger-soft); }
 
     /* ── Header score chip ───────────────────────────── */
     #score-chip {
@@ -960,6 +967,193 @@
       padding-top: var(--sp-2);
       border-top: 1px dashed var(--border);
     }
+
+    /* ── Gallery overlay ─────────────────────────────── */
+    #gallery-overlay { z-index: 250; }
+    #gallery-content {
+      padding: var(--sp-4) 22px 22px;
+      max-width: 460px;
+      width: 92%;
+      max-height: 84vh;
+      max-height: 84dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #gallery-content h2 {
+      margin: 0 0 4px;
+      font-size: var(--fs-lg);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    #gallery-sub {
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      margin: 0 0 12px;
+      min-height: 14px;
+    }
+    #gallery-grid {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--sp-3);
+      margin: 0 -4px;
+      padding: 0 4px 4px;
+    }
+    @media (min-width: 420px) {
+      #gallery-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .gal-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .gal-thumb {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      background:
+        linear-gradient(160deg, #c2a36b 0%, #9c7b46 45%, #6b86a8 46%, #41648c 100%);
+      object-fit: cover;
+      display: block;
+      cursor: pointer;
+    }
+    .gal-meta { padding: 6px 8px; }
+    .gal-title {
+      font-size: var(--fs-xs);
+      color: var(--text);
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .gal-date {
+      font-size: 10px;
+      color: var(--text-faint);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+    .gal-actions {
+      display: flex;
+      gap: 4px;
+      padding: 0 8px 8px;
+    }
+    .gal-actions button {
+      flex: 1;
+      padding: 5px 0;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .gal-actions button:active { transform: scale(0.96); }
+    .gal-actions button.gal-open { background: var(--accent); color: var(--bg, #0b0e14); border-color: var(--accent); }
+    .gal-actions button.gal-del { color: #e88; }
+    .gal-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: var(--text-faint);
+      padding: 36px 12px;
+      font-size: var(--fs-sm);
+      line-height: 1.5;
+    }
+
+    /* ── Save dialog ─────────────────────────────────── */
+    #save-overlay { z-index: 260; }
+    #save-content {
+      padding: var(--sp-4) 22px 20px;
+      max-width: 340px;
+      width: 90%;
+    }
+    #save-content h2 {
+      margin: 0 0 10px;
+      font-size: var(--fs-lg);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    #save-content label {
+      display: block;
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    #save-name {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: var(--fs-md);
+      margin-bottom: 14px;
+    }
+    .save-actions, .rename-actions {
+      display: flex;
+      gap: var(--sp-2);
+      justify-content: flex-end;
+    }
+    .save-actions button, .rename-actions button {
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .save-actions button.primary, .rename-actions button.primary {
+      background: var(--accent);
+      color: var(--bg, #0b0e14);
+      border-color: var(--accent);
+    }
+    .save-actions button:active, .rename-actions button:active { transform: scale(0.97); }
+
+    /* ── Viewing-a-creation banner ───────────────────── */
+    #view-banner {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(env(safe-area-inset-top, 0px) + 56px);
+      z-index: 240;
+      display: none;
+      align-items: center;
+      gap: var(--sp-3);
+      max-width: 92vw;
+      padding: 8px 10px 8px 14px;
+      background: var(--surface-1);
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      box-shadow: var(--shadow-modal);
+      font-size: var(--fs-sm);
+    }
+    #view-banner.open { display: flex; }
+    #view-banner .vb-text {
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #view-banner .vb-text strong { color: var(--accent); }
+    #view-back {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: var(--bg, #0b0e14);
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #view-back:active { transform: scale(0.96); }
 
     #info-overlay { z-index: 200; }
     #info-content {
@@ -1491,7 +1685,7 @@
       <rect x="14" y="21" width="4" height="4" rx="1" fill="#ff6b35"></rect>
       <rect x="21" y="21" width="4" height="4" rx="1" fill="#4a90d9"></rect>
     </svg>
-    <span class="brand-word">Falling Sands</span>
+    <span class="brand-word">Usernode Falling Sands</span>
   </div>
   <!-- Live status chrome — reparented from the old top status bar.
        Same IDs and state-class contracts (#status .ok/.err,
@@ -1524,7 +1718,10 @@
   <label id="speed-label" style="display:none">Speed</label>
   <input id="sim-speed" type="range" min="1" max="5" value="3" style="display:none" />
   <span id="speed-value" style="display:none">1×</span>
+  <button class="quick-btn" id="save-btn" type="button" title="Save this canvas to your gallery">&#x1F4BE;</button>
+  <button class="quick-btn" id="gallery-btn" type="button" title="Your saved creations">&#x1F5BC;</button>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
+  <button class="quick-btn" id="clear-canvas-btn" type="button" title="Clear canvas">&#x1F5D1;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
   <!-- The .tb-right slot is always rendered so the toolbar layout
        doesn't snap when the user starts/finishes drawing, but its
@@ -1579,6 +1776,47 @@
     </div>
     <div id="lb-list"><div class="lb-loading">Loading…</div></div>
   </div>
+</div>
+
+<!-- Save creation dialog -->
+<div id="save-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="save-title">
+  <div id="save-content" class="modal-surface">
+    <h2 id="save-title">Save creation</h2>
+    <label for="save-name">Name your creation</label>
+    <input id="save-name" type="text" maxlength="120" autocomplete="off" />
+    <div class="save-actions">
+      <button id="save-cancel" type="button">Cancel</button>
+      <button id="save-confirm" type="button" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Personal gallery -->
+<div id="gallery-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gallery-title">
+  <div id="gallery-content" class="modal-surface">
+    <h2 id="gallery-title">Your gallery</h2>
+    <p id="gallery-sub"></p>
+    <div id="gallery-grid"><div class="gal-empty">Loading…</div></div>
+  </div>
+</div>
+
+<!-- Rename creation dialog -->
+<div id="rename-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+  <div id="save-content" class="modal-surface">
+    <h2 id="rename-title">Rename creation</h2>
+    <label for="rename-name">New name</label>
+    <input id="rename-name" type="text" maxlength="120" autocomplete="off" />
+    <div class="rename-actions">
+      <button id="rename-cancel" type="button">Cancel</button>
+      <button id="rename-confirm" type="button" class="primary">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- Viewing-a-saved-creation banner -->
+<div id="view-banner">
+  <span class="vb-text" id="view-banner-text">Viewing a saved creation</span>
+  <button id="view-back" type="button">Back to live</button>
 </div>
 
 <div id="admin-confirm-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
@@ -3194,7 +3432,10 @@ if (typeof createREGL === "undefined") {
 
 let regl, dataTexture;
 try {
-  regl = createREGL({ canvas, attributes: { preserveDrawingBuffer: false } });
+  // preserveDrawingBuffer:true so captureThumbnail() can read the rendered
+  // canvas back via toDataURL at save time (the gallery needs a PNG tile).
+  // Minor per-GPU cost; acceptable for a casual sandbox.
+  regl = createREGL({ canvas, attributes: { preserveDrawingBuffer: true } });
   dataTexture = regl.texture({
     width: HEIGHT, height: WIDTH, data: cellData,
     min: 'nearest', mag: 'nearest',
@@ -3329,8 +3570,8 @@ void main() {
   else if (type == 5) { hue = 0.9; saturation = 0.3; }
   else if (type == 6) { hue = d.g * 0.1; saturation = 0.7; lightness = 0.7 + (d.g * 0.3) + ((noise + 0.8) * 0.5); }
   else if (type == 7) { hue = d.g * 0.1; saturation = 0.3; lightness = 0.3 + d.g * 0.3; }
-  else if (type == 8) { hue = d.g * 0.1; lightness = 0.7 + d.g * 0.25 + noise * 0.1; }
-  else if (type == 9) { hue = 0.6; saturation = 0.4; lightness = 0.7 + d.g * 0.5; }
+  else if (type == 8) { hue = d.g * 0.1; saturation = 0.85; lightness = 0.7 + d.g * 0.25 + noise * 0.1; lightness += (noise + 0.8) * 0.3 * clamp(d.g * 2.0, 0.0, 1.0); }
+  else if (type == 9) { hue = 0.6; saturation = 0.4; lightness = 0.7 + d.g * 0.5 + noise * 0.05; }
   else if (type == 10) { hue = 0.9; saturation = 0.4; lightness = 1.0; }
   else if (type == 11) { hue = 0.4; saturation = 0.4; }
   else if (type == 12) { hue = 0.18; saturation = 0.9; lightness = 0.8 + d.g * 0.2 + noise * 0.05; }
@@ -3430,6 +3671,11 @@ let universe = null;
 let wasmMemory = null;
 let wasmPrng = null;
 let FRAME_SIZE = 0;
+
+// Gallery "view mode": when true the client is previewing a saved/shared
+// creation locally and the live chain stream is paused (see simTick30Hz,
+// startPaint, and the resync handler). Toggled by enterViewMode/exitViewMode.
+let viewingCreation = false;
 
 let simTick = 0;              // current simulation tick number
 let clientActiveUntilTick = 0; // server's physics window end — client freezes past this
@@ -3614,6 +3860,19 @@ function fastForwardTo(targetTick) {
 
 function simTick30Hz() {
   if (!universe) return;
+
+  // Gallery view mode: play the saved creation's own physics forward
+  // locally, but ignore the chain entirely — no WS draw application and
+  // no wall-clock fast-forward (simTick was reset to the creation's tick,
+  // which may be far in the past). This keeps another player's live
+  // strokes from painting over the saved piece. Back-to-live clears the
+  // flag and resyncs. See enterViewMode()/exitViewMode().
+  if (viewingCreation) {
+    universe.tick();
+    simTick++;
+    ticksThisSecond++;
+    return;
+  }
 
   const wallTick = timestampToTick(Date.now());
   let ticksToRun = Math.max(1, wallTick - simTick);
@@ -3827,8 +4086,9 @@ function handleMessage(event) {
 
       setLoadingPhase("CANVAS", 50);
 
-      // Load snapshot
-      if (msg.snapshot) {
+      // Load snapshot — unless we're previewing a saved creation (a late
+      // reconnect must not clobber the view; Back-to-live resyncs).
+      if (msg.snapshot && !viewingCreation) {
         loadSnapshot(msg.snapshot);
       }
 
@@ -3864,7 +4124,7 @@ function handleMessage(event) {
 
       // Fast-forward behind the loading bar up to wall-clock time (capped
       // at the server's window end — beyond that we go live at 30Hz).
-      {
+      if (!viewingCreation) {
         const wallTick = timestampToTick(Date.now());
         const targetTick = msg.frozen ? simTick : Math.min(wallTick, clientActiveUntilTick);
         if (targetTick > simTick) {
@@ -3900,6 +4160,10 @@ function handleMessage(event) {
       if (simInterval) clearInterval(simInterval);
       simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
 
+      // Shared-link deep entry: if the page was opened with ?creation=<id>,
+      // drop into a preview of that creation now that the engine is live.
+      try { if (window.Gallery && window.Gallery.maybeOpenShared) window.Gallery.maybeOpenShared(); } catch (_) {}
+
     } else if (msg.type === "resync") {
       // Error-recovery fallback: reload snapshot and restart simulation.
       // Normal draws arrive as lightweight "tx" messages instead. Admin
@@ -3910,6 +4174,13 @@ function handleMessage(event) {
       if (msg.adminPubkey !== undefined) {
         adminPubkey = msg.adminPubkey || null;
         maybeShowAdminUI();
+      }
+
+      // Don't let a resync (admin reset / reconnect) paint over the saved
+      // creation the user is previewing. Back-to-live reloads live state.
+      if (viewingCreation) {
+        console.log("[sands-resync] suppressed while viewing a saved creation");
+        return;
       }
 
       if (simInterval) clearInterval(simInterval);
@@ -4688,7 +4959,24 @@ btnDiscard.addEventListener("click", () => {
   refreshFabs();
 });
 
+document.getElementById("clear-canvas-btn").addEventListener("click", () => {
+  // Clear pending local strokes
+  pendingStrokes = [];
+  usedBudget = 0;
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  refreshFabs();
+  // Zero out the WASM simulation grid
+  if (universe && wasmMemory && FRAME_SIZE) {
+    new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE).fill(0);
+    new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE).fill(0);
+    new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE).fill(0);
+  }
+});
+
 function startPaint(e) {
+  // Drawing is disabled while previewing a saved creation — strokes there
+  // would be meaningless (they're not on the shared canvas).
+  if (viewingCreation) return;
   painting = true;
   lastPaintPos = null;
   dragStartIdx = pendingStrokes.length;
@@ -5164,6 +5452,400 @@ window.Leaderboard = (function () {
   setTimeout(() => { refresh(); }, 1500);
 
   return { onTx, refresh, open };
+})();
+
+// ── Capture / restore helpers (shared by Gallery + view mode) ────────────────
+//
+// A "creation" is the full canvas at a moment in time, in the SAME shape the
+// server snapshot uses (cells|winds|burns concatenated, pako-deflated,
+// base64) so the existing loadSnapshot() restores it with no new buffer code.
+
+function captureCreation() {
+  if (!universe || !wasmMemory || !FRAME_SIZE || typeof pako === "undefined") return null;
+  try {
+    const cells = new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE);
+    const winds = new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE);
+    const burns = new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE);
+    const raw = new Uint8Array(FRAME_SIZE * 3);
+    raw.set(cells, 0);
+    raw.set(winds, FRAME_SIZE);
+    raw.set(burns, FRAME_SIZE * 2);
+    const compressed = pako.deflate(raw);
+    // base64 in chunks so String.fromCharCode.apply doesn't blow the stack.
+    let bin = "";
+    const CH = 0x8000;
+    for (let i = 0; i < compressed.length; i += CH) {
+      bin += String.fromCharCode.apply(null, compressed.subarray(i, i + CH));
+    }
+    return {
+      cells_b64: btoa(bin),
+      buffers: 3,
+      prng_state: wasmPrng && wasmPrng.getState ? wasmPrng.getState() : 0,
+      generation: universe.generation ? universe.generation() : 0,
+      wasm_rng_state: universe.rng_state ? String(universe.rng_state()) : "0",
+      tick: simTick,
+      width: WIDTH,
+      height: HEIGHT,
+    };
+  } catch (e) {
+    console.warn("[gallery] capture failed:", e);
+    return null;
+  }
+}
+
+// Small PNG of the rendered canvas for the gallery grid. Needs the regl
+// context's preserveDrawingBuffer:true (set at init) so the WebGL canvas
+// reads back. Returns a data: URL, or null on failure (placeholder tile).
+function captureThumbnail() {
+  try {
+    const TH = 150;
+    const tw = Math.max(1, Math.round((TH * WIDTH) / HEIGHT));
+    const tmp = document.createElement("canvas");
+    tmp.width = tw;
+    tmp.height = TH;
+    const ctx = tmp.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, tw, TH);
+    return tmp.toDataURL("image/png");
+  } catch (e) {
+    console.warn("[gallery] thumbnail failed:", e);
+    return null;
+  }
+}
+
+// ── Personal gallery: save, browse/manage, share, view mode, deep link ───────
+window.Gallery = (function () {
+  const saveBtn = document.getElementById("save-btn");
+  const galleryBtn = document.getElementById("gallery-btn");
+
+  const saveOverlay = document.getElementById("save-overlay");
+  const saveNameEl = document.getElementById("save-name");
+  const saveCancel = document.getElementById("save-cancel");
+  const saveConfirm = document.getElementById("save-confirm");
+
+  const galOverlay = document.getElementById("gallery-overlay");
+  const galContent = document.getElementById("gallery-content");
+  const galGrid = document.getElementById("gallery-grid");
+  const galSub = document.getElementById("gallery-sub");
+
+  const renameOverlay = document.getElementById("rename-overlay");
+  const renameNameEl = document.getElementById("rename-name");
+  const renameCancel = document.getElementById("rename-cancel");
+  const renameConfirm = document.getElementById("rename-confirm");
+
+  const banner = document.getElementById("view-banner");
+  const bannerText = document.getElementById("view-banner-text");
+  const backBtn = document.getElementById("view-back");
+
+  let saving = false;
+  let renameTarget = null; // id currently being renamed
+  let sharedOpened = false;
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  function toast(msg) {
+    let t = document.getElementById("gal-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "gal-toast";
+      t.style.cssText =
+        "position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 80px);" +
+        "transform:translateX(-50%);z-index:300;background:var(--surface-1);" +
+        "border:1px solid var(--accent);color:var(--text);padding:9px 16px;" +
+        "border-radius:999px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,0.45);" +
+        "opacity:0;transition:opacity .2s ease;pointer-events:none;max-width:90vw;text-align:center;";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = "1";
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => { t.style.opacity = "0"; }, 2200);
+  }
+
+  function nameFor(pubkey) {
+    try {
+      if (window.UsernodeUsernames) return window.UsernodeUsernames.getUsernameSync(pubkey);
+    } catch (_) {}
+    return "user_" + (pubkey ? String(pubkey).slice(-6) : "??????");
+  }
+
+  function fmtDate(iso) {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch (_) { return ""; }
+  }
+
+  function defaultTitle() {
+    try {
+      return "Creation – " + new Date().toLocaleString(undefined,
+        { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    } catch (_) { return "Creation"; }
+  }
+
+  function closeOverlays() {
+    saveOverlay.classList.remove("open");
+    galOverlay.classList.remove("open");
+    renameOverlay.classList.remove("open");
+  }
+
+  // Resolve the signed-in wallet pubkey; null when no wallet is connected.
+  async function myAddr() {
+    try { return await getMyAddressCached(); } catch (_) { return null; }
+  }
+
+  function needWalletMsg() {
+    showError("Sign in with the Usernode app to save and view your gallery.");
+  }
+
+  // ── Save flow ──────────────────────────────────────────────────────
+  async function openSaveDialog() {
+    if (!universe || !FRAME_SIZE) { showError("Canvas still loading — try again in a moment."); return; }
+    const addr = await myAddr();
+    if (!addr) { needWalletMsg(); return; }
+    saveNameEl.value = defaultTitle();
+    saveOverlay.classList.add("open");
+    setTimeout(() => { try { saveNameEl.focus(); saveNameEl.select(); } catch (_) {} }, 60);
+  }
+
+  async function doSave() {
+    if (saving) return;
+    const addr = await myAddr();
+    if (!addr) { closeOverlays(); needWalletMsg(); return; }
+    const snapshot = captureCreation();
+    if (!snapshot) { showError("Couldn't capture the canvas."); return; }
+    const thumb = captureThumbnail();
+    const title = (saveNameEl.value || "").trim() || defaultTitle();
+
+    saving = true;
+    saveConfirm.disabled = true;
+    saveConfirm.textContent = "Saving…";
+    try {
+      const resp = await fetch("/__sands/creations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: addr, title, snapshot, thumb_b64: thumb }),
+      });
+      if (!resp.ok) {
+        let msg = "Save failed.";
+        try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch (_) {}
+        throw new Error(msg);
+      }
+      closeOverlays();
+      toast("Saved to your gallery");
+    } catch (e) {
+      showError(e.message || "Save failed.");
+    } finally {
+      saving = false;
+      saveConfirm.disabled = false;
+      saveConfirm.textContent = "Save";
+    }
+  }
+
+  // ── Gallery list ───────────────────────────────────────────────────
+  async function openGallery() {
+    const addr = await myAddr();
+    if (!addr) { needWalletMsg(); return; }
+    galOverlay.classList.add("open");
+    galGrid.innerHTML = '<div class="gal-empty">Loading…</div>';
+    galSub.textContent = "";
+    try {
+      const resp = await fetch("/__sands/creations?owner=" + encodeURIComponent(addr), { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      renderGrid(Array.isArray(data.items) ? data.items : []);
+    } catch (e) {
+      galGrid.innerHTML = '<div class="gal-empty">Couldn’t load your gallery. Try again.</div>';
+    }
+  }
+
+  function renderGrid(items) {
+    if (!items.length) {
+      galSub.textContent = "";
+      galGrid.innerHTML = '<div class="gal-empty">Nothing saved yet — tap 💾 to keep a copy of the canvas.</div>';
+      return;
+    }
+    galSub.textContent = items.length + (items.length === 1 ? " creation" : " creations");
+    let html = "";
+    for (const it of items) {
+      const thumb = it.thumb_b64
+        ? '<img class="gal-thumb" data-id="' + esc(it.id) + '" alt="" src="' + esc(it.thumb_b64) + '">'
+        : '<div class="gal-thumb" data-id="' + esc(it.id) + '"></div>';
+      html +=
+        '<div class="gal-card" data-id="' + esc(it.id) + '">' +
+        thumb +
+        '<div class="gal-meta">' +
+        '<div class="gal-title">' + esc(it.title) + "</div>" +
+        '<div class="gal-date">' + esc(fmtDate(it.created_at)) + "</div>" +
+        "</div>" +
+        '<div class="gal-actions">' +
+        '<button class="gal-open" data-act="open" data-id="' + esc(it.id) + '">Open</button>' +
+        '<button data-act="share" data-id="' + esc(it.id) + '">Share</button>' +
+        '<button data-act="rename" data-id="' + esc(it.id) + '" data-title="' + esc(it.title) + '">Rename</button>' +
+        '<button class="gal-del" data-act="delete" data-id="' + esc(it.id) + '">Delete</button>' +
+        "</div></div>";
+    }
+    galGrid.innerHTML = html;
+  }
+
+  async function fetchCreation(id) {
+    const resp = await fetch("/__sands/creations/" + encodeURIComponent(id), { cache: "no-store" });
+    if (resp.status === 404) return { gone: true };
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  }
+
+  async function openCreation(id) {
+    try {
+      const c = await fetchCreation(id);
+      if (c && c.gone) { showError("This creation is no longer available."); openGallery(); return; }
+      enterViewMode(c, { ownerName: nameFor(c.owner) });
+    } catch (e) {
+      showError("Couldn't open that creation.");
+    }
+  }
+
+  function shareLink(id) {
+    const url = location.origin + location.pathname + "?creation=" + encodeURIComponent(id);
+    copyTextToClipboard(url).then((ok) => {
+      toast(ok ? "Link copied" : "Couldn't copy — link: " + url);
+    });
+  }
+
+  async function deleteCreation(id) {
+    if (!confirm("Delete this creation? This can't be undone.")) return;
+    const addr = await myAddr();
+    if (!addr) { needWalletMsg(); return; }
+    try {
+      const resp = await fetch(
+        "/__sands/creations/" + encodeURIComponent(id) + "?owner=" + encodeURIComponent(addr),
+        { method: "DELETE" }
+      );
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      toast("Deleted");
+      openGallery();
+    } catch (e) {
+      showError("Couldn't delete that creation.");
+    }
+  }
+
+  function openRename(id, title) {
+    renameTarget = id;
+    renameNameEl.value = title || "";
+    renameOverlay.classList.add("open");
+    setTimeout(() => { try { renameNameEl.focus(); renameNameEl.select(); } catch (_) {} }, 60);
+  }
+
+  async function doRename() {
+    const id = renameTarget;
+    if (!id) return;
+    const addr = await myAddr();
+    if (!addr) { renameOverlay.classList.remove("open"); needWalletMsg(); return; }
+    const title = (renameNameEl.value || "").trim();
+    try {
+      const resp = await fetch("/__sands/creations/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: addr, title }),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      renameOverlay.classList.remove("open");
+      renameTarget = null;
+      openGallery();
+    } catch (e) {
+      showError("Couldn't rename that creation.");
+    }
+  }
+
+  // ── View mode ──────────────────────────────────────────────────────
+  function enterViewMode(creation, opts) {
+    opts = opts || {};
+    if (!creation || !creation.snapshot) { showError("Couldn't open that creation."); return; }
+    const snap = creation.snapshot;
+    if ((snap.width && snap.width !== WIDTH) || (snap.height && snap.height !== HEIGHT)) {
+      showError("That creation was made on a different canvas size and can't be shown here.");
+      return;
+    }
+    closeOverlays();
+    viewingCreation = true;
+    try { loadSnapshot(snap); } catch (e) { viewingCreation = false; showError("Couldn't load that creation."); return; }
+    const who = opts.ownerName ? " by " + esc(opts.ownerName) : "";
+    bannerText.innerHTML = "Viewing <strong>" + esc(creation.title || "a saved creation") + "</strong>" + who;
+    banner.classList.add("open");
+    try { if (typeof refreshFabs === "function") refreshFabs(); } catch (_) {}
+  }
+
+  async function exitViewMode() {
+    if (!viewingCreation) return;
+    viewingCreation = false;
+    banner.classList.remove("open");
+    // Resync to live: pull the freshest server snapshot, reset tick, drop
+    // buffered txs. New WS "tx" messages keep applying as usual afterward.
+    try {
+      const r = await fetch("/__sands/snapshot", { cache: "no-store" });
+      if (!r.ok) throw new Error("snapshot " + r.status);
+      const snap = await r.json();
+      pendingTxs = [];
+      loadSnapshot(snap);
+    } catch (e) {
+      // Couldn't refetch — avoid a fast-forward storm by jumping the tick
+      // counter to wall-clock and clearing buffered txs.
+      pendingTxs = [];
+      try {
+        simTick = timestampToTick(Date.now());
+        clientActiveUntilTick = simTick;
+      } catch (_) {}
+    }
+  }
+
+  // ── Shared-link deep entry (?creation=<id>) ────────────────────────
+  let pendingSharedId = null;
+  try { pendingSharedId = new URLSearchParams(location.search).get("creation"); } catch (_) {}
+
+  async function maybeOpenShared() {
+    if (sharedOpened || !pendingSharedId) return;
+    sharedOpened = true;
+    try {
+      const c = await fetchCreation(pendingSharedId);
+      if (c && c.gone) { showError("This shared creation is no longer available."); return; }
+      enterViewMode(c, { ownerName: nameFor(c.owner) });
+    } catch (e) {
+      showError("Couldn't open the shared creation.");
+    }
+  }
+
+  // ── Wiring ─────────────────────────────────────────────────────────
+  if (saveBtn) saveBtn.addEventListener("click", openSaveDialog);
+  if (galleryBtn) galleryBtn.addEventListener("click", openGallery);
+  if (saveCancel) saveCancel.addEventListener("click", () => saveOverlay.classList.remove("open"));
+  if (saveConfirm) saveConfirm.addEventListener("click", doSave);
+  if (saveNameEl) saveNameEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doSave(); });
+  if (renameCancel) renameCancel.addEventListener("click", () => { renameOverlay.classList.remove("open"); renameTarget = null; });
+  if (renameConfirm) renameConfirm.addEventListener("click", doRename);
+  if (renameNameEl) renameNameEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doRename(); });
+  if (backBtn) backBtn.addEventListener("click", exitViewMode);
+
+  if (saveOverlay) saveOverlay.addEventListener("click", (e) => { if (e.target === saveOverlay) saveOverlay.classList.remove("open"); });
+  if (renameOverlay) renameOverlay.addEventListener("click", (e) => { if (e.target === renameOverlay) { renameOverlay.classList.remove("open"); renameTarget = null; } });
+  if (galOverlay) galOverlay.addEventListener("click", (e) => { if (!galContent.contains(e.target)) galOverlay.classList.remove("open"); });
+
+  // Delegated card actions.
+  if (galGrid) galGrid.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-act], .gal-thumb");
+    if (!t) return;
+    const id = t.getAttribute("data-id");
+    if (!id) return;
+    const act = t.getAttribute("data-act");
+    if (!act || t.classList.contains("gal-thumb")) { openCreation(id); return; }
+    if (act === "open") openCreation(id);
+    else if (act === "share") shareLink(id);
+    else if (act === "rename") openRename(id, t.getAttribute("data-title") || "");
+    else if (act === "delete") deleteCreation(id);
+  });
+
+  return { maybeOpenShared, enterViewMode, exitViewMode, captureCreation };
 })();
 
 // ── Admin reset ─────────────────────────────────────────────────────────────
