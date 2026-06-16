@@ -2,8 +2,80 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <!-- maximum-scale=1 is intentional: the canvas implements its own
+       pinch-zoom (touchmove handlers below), so browser page-zoom would
+       fight it. viewport-fit=cover lets the app paint under notches /
+       rounded corners; safe-area insets (CSS env()) keep chrome clear. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b0e14" />
+
+  <!-- ── Boot safety net ─────────────────────────────────────────────────
+       Runs in <head>, before any external <script>. Its only job is to
+       guarantee the loading overlay reaches a terminal, actionable state
+       even if a parser-blocking external script (the cross-origin bridge,
+       a CDN lib) stalls forever on a slow/filtered mobile network — the
+       single most common reason an Android user "can't access" the game.
+       The HTML parser pauses on a stalled external script, but the event
+       loop keeps servicing timers (HTML spec: the parser "spins the event
+       loop" while it waits), so this setTimeout still fires. The main
+       controller sets window.__sandsControllerAlive = true as its first
+       statement; if that never happens within the guard window, the page
+       never started, and we flip the (already-painted) overlay to an
+       error + working Retry — independent of bridge/regl/pako entirely. -->
+  <script>
+  (function () {
+    "use strict";
+    window.__sandsControllerAlive = false;
+    var FIRED = false;
+    // ~7s: long enough that any healthy boot signals alive first (even a
+    // cold WASM load), short enough that a dead cross-origin fetch doesn't
+    // strand the user behind a frozen bar.
+    var BOOT_GUARD_MS = 7000;
+
+    function showBootError() {
+      if (FIRED || window.__sandsControllerAlive) return;
+      FIRED = true;
+      var ov     = document.getElementById("loading-overlay");
+      var err    = document.getElementById("loader-error");
+      var msg    = document.getElementById("loader-error-msg");
+      var status = document.getElementById("loader-status");
+      var track  = ov ? ov.querySelector(".loader-track") : null;
+      var retry  = document.getElementById("loader-retry-btn");
+      if (track)  track.style.display = "none";
+      if (status) status.textContent = "Something went wrong";
+      if (msg)    msg.textContent =
+        "Couldn't load a required component. Check your connection and tap Retry.";
+      if (err)    err.hidden = false;
+      if (retry && !retry.__bootWired) {
+        retry.__bootWired = true;
+        retry.addEventListener("click", function () {
+          try {
+            var n = (parseInt(sessionStorage.getItem("sands:loadRetries") || "0", 10) || 0) + 1;
+            sessionStorage.setItem("sands:loadRetries", String(n));
+          } catch (_) {}
+          location.reload();
+        });
+      }
+    }
+
+    setTimeout(function () {
+      if (window.__sandsControllerAlive) return; // controller booted fine
+      // Honor the same mock/local-dev skip as the in-app watchdog: if the
+      // bridge loaded and reports mock mode, stay quiet (the controller
+      // dismisses on its own). If the bridge isn't even present, this is a
+      // genuine stall → surface recovery (fail safe toward the UI).
+      try {
+        if (window.usernode && typeof window.usernode.isMockEnabled === "function") {
+          Promise.resolve(window.usernode.isMockEnabled())
+            .then(function (mock) { if (!mock) showBootError(); })
+            .catch(function () { showBootError(); });
+          return;
+        }
+      } catch (_) {}
+      showBootError();
+    }, BOOT_GUARD_MS);
+  })();
+  </script>
   <title>Falling Sands — Shared Viewer</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e14'/%3E%3Crect x='14' y='5' width='4' height='4' rx='1' fill='%235dd39e'/%3E%3Crect x='10' y='12' width='4' height='4' rx='1' fill='%236ea8fe'/%3E%3Crect x='18' y='12' width='4' height='4' rx='1' fill='%23c2b280'/%3E%3Crect x='7' y='21' width='4' height='4' rx='1' fill='%23c2b280'/%3E%3Crect x='14' y='21' width='4' height='4' rx='1' fill='%23ff6b35'/%3E%3Crect x='21' y='21' width='4' height='4' rx='1' fill='%234a90d9'/%3E%3C/svg%3E" />
   <!-- One imported display font for the wordmark + headings. font-display:swap
@@ -101,7 +173,12 @@
       gap: var(--sp-3);
       width: 100%;
       flex-shrink: 0;
+      /* Expand into the safe area so the wordmark / status chrome clear a
+         top notch and side cutouts under viewport-fit=cover. */
       padding: 8px 14px;
+      padding-top:   max(8px, env(safe-area-inset-top));
+      padding-left:  max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
       border-bottom: 1px solid var(--border);
       background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
     }
@@ -457,11 +534,21 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      /* Base padding, expanded by the device safe-area on the sides/bottom
+         so the canvas + floating zoom controls clear notches and rounded
+         corners on viewport-fit=cover (Android/iOS). max() keeps the
+         original 12px minimum where there's no inset. */
       padding: var(--sp-3);
+      padding-left:   max(var(--sp-3), env(safe-area-inset-left));
+      padding-right:  max(var(--sp-3), env(safe-area-inset-right));
+      padding-bottom: max(var(--sp-3), env(safe-area-inset-bottom));
       min-height: 0;
       width: 100%;
       position: relative;
       overflow: hidden;
+      /* Belt-and-suspenders: the wrap itself should never initiate a
+         native scroll/zoom gesture either. */
+      touch-action: none;
     }
     #canvas-container {
       position: relative;
@@ -607,6 +694,13 @@
       border-radius: var(--radius-md);
       cursor: crosshair;
       pointer-events: auto;
+      /* Cede all native gestures (scroll, pinch-zoom, double-tap-zoom) to
+         our JS handlers immediately. Without this, Android WebView/Chrome
+         can claim the first touch or delay it while deciding whether the
+         gesture is a scroll — the cause of "dead" first taps and sticky
+         pans. The app implements its own pinch-zoom + double-tap zoom, so
+         nothing native is lost. */
+      touch-action: none;
     }
 
     /* ── Live status chrome (reparented into the header) ── */
@@ -1231,7 +1325,7 @@
 <div id="loading-overlay">
   <div class="loader-title">Falling Sands</div>
   <div class="loader-track"><div class="loader-fill" id="loader-fill"></div></div>
-  <div class="loader-status" id="loader-status">Loading...</div>
+  <div class="loader-status" id="loader-status">Starting up…</div>
   <div class="loader-error" id="loader-error" hidden>
     <div class="loader-error-msg" id="loader-error-msg"></div>
     <div class="loader-error-codebox" id="loader-error-codebox" hidden>
@@ -1425,14 +1519,45 @@
      Cache-Control: no-cache, must-revalidate so each page load
      revalidates via 304. Major-version bumps move to /v2/, segregating
      cache state naturally. -->
-<script src="https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js"></script>
-<script src="/usernode-usernames.js"></script>
-<script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-<script src="/wasm-browser.js"></script>
+<script src="https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js"
+        onerror="window.__sandsBridgeFailed=true;console.warn('[sands] bridge.js failed to load — wallet/send disabled, viewing still works')"></script>
+<script src="/usernode-usernames.js"
+        onerror="console.warn('[sands] usernode-usernames.js failed to load')"></script>
+
+<!-- regl + pako: each loaded from a primary CDN with a synchronous
+     fallback to the alternate host. The guard runs only if the primary
+     failed to define its global, so a healthy load never double-fetches
+     (this replaces the old unconditional unpkg+jsdelivr double tag). The
+     fallback is parser-blocking so `createREGL` / `pako` are defined by
+     the time the controller below runs — preserving the synchronous
+     contract the renderer relies on. If BOTH hosts fail, the controller's
+     own regl guard routes to the loading-error card with Retry. -->
+<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"
+        onerror="console.warn('[sands] regl primary (jsdelivr) failed — trying fallback')"></script>
+<script>
+  window.createREGL || document.write(
+    '<script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"' +
+    ' onerror="console.warn(\'[sands] regl fallback (unpkg) failed\')"><\/script>');
+</script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"
+        onerror="console.warn('[sands] pako primary (jsdelivr) failed — trying fallback')"></script>
+<script>
+  window.pako || document.write(
+    '<script src="https://unpkg.com/pako@2.1.0/dist/pako.min.js"' +
+    ' onerror="console.warn(\'[sands] pako fallback (unpkg) failed\')"><\/script>');
+</script>
+
+<script src="/wasm-browser.js"
+        onerror="console.warn('[sands] wasm-browser.js failed to load')"></script>
 
 <script>
+// Tell the <head> boot safety net the controller actually started. Set
+// synchronously as the first statement so the guard timer (which fires on
+// a later tick) only ever fires when this script never ran at all — i.e.
+// a preceding parser-blocking external script stalled. From here on the
+// in-app loader watchdog (stall detector + hard deadline) owns recovery.
+window.__sandsControllerAlive = true;
+
 // =============================================================================
 // ERROR DISPLAY
 // =============================================================================
@@ -1740,6 +1865,10 @@ const LOAD_ERR_PHASES = {
   EXPLORER: {
     seg: "EXPLORER",
     message: "The chain explorer is unreachable. You can keep waiting or play offline.",
+  },
+  LIB: {
+    seg: "LIB",
+    message: "Couldn't load a required component (a library failed to download). Check your connection and tap Retry.",
   },
   UNKNOWN: {
     seg: "UNKNOWN",
@@ -2127,7 +2256,7 @@ async function startLoaderWatchdog() {
 startLoaderWatchdog();
 
 // Dev-only loader-state forcing hook. `?loaderTest=replay|node|explorer|
-// wasm|ws|offline` renders the corresponding terminal card so the messages,
+// wasm|lib|ws|offline` renders the corresponding terminal card so the messages,
 // copyable code, Copy button, and Play-offline branch can be exercised in
 // staging without standing up a real cold-boot replay or a desynced node.
 // Strictly gated behind mock/local-dev so it can never trigger in production.
@@ -2172,6 +2301,10 @@ startLoaderWatchdog();
         break;
       case "wasm":
         showLoaderError({ phase: "WASM" });
+        break;
+      case "lib":
+        // Simulates a CDN library (regl/pako) failing both hosts.
+        showLoaderError({ phase: "LIB", detail: "regl (WebGL renderer) unavailable" });
         break;
       case "ws":
         showLoaderError({ phase: "WS" });
@@ -2718,8 +2851,11 @@ window.addEventListener("resize", sizeCanvas);
 let cellData = new Uint8Array(WIDTH * HEIGHT * CELL_BYTES);
 
 if (typeof createREGL === "undefined") {
+  // Both CDN hosts for regl failed (primary + fallback). Surface inside the
+  // overlay with a working Retry rather than dying silently behind it.
   document.getElementById("status").className = "err";
   document.getElementById("status").textContent = "Error: regl library failed to load";
+  showLoaderError({ phase: "LIB", detail: "regl (WebGL renderer) unavailable" });
   throw new Error("regl not loaded");
 }
 
@@ -3340,7 +3476,7 @@ function handleMessage(event) {
         }
       }
 
-      setLoading(50, "Loading snapshot...");
+      setLoading(50, "Loading the shared canvas…");
 
       // Load snapshot
       if (msg.snapshot) {
@@ -3383,7 +3519,7 @@ function handleMessage(event) {
         const wallTick = timestampToTick(Date.now());
         const targetTick = msg.frozen ? simTick : Math.min(wallTick, clientActiveUntilTick);
         if (targetTick > simTick) {
-          setLoading(70, "Catching up...");
+          setLoading(70, "Catching up on recent activity…");
           console.log(`[sands-init] fast-forwarding ${targetTick - simTick} ticks to catch up`);
           fastForwardTo(targetTick);
         }
@@ -3604,7 +3740,7 @@ function startRound() {
   try {
     _bootStage = "wasm";
     markEngineProgress();
-    setLoading(10, "Loading simulation engine...");
+    setLoading(10, "Loading the sandbox…");
     statusEl.textContent = "Loading WASM...";
     const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
     universe = wasm.Universe.new(WIDTH, HEIGHT);
@@ -3624,7 +3760,7 @@ function startRound() {
 
     _bootStage = "ws";
     markEngineProgress();
-    setLoading(30, "Connecting to server...");
+    setLoading(30, "Connecting to the live canvas…");
     statusEl.textContent = "Connecting...";
     scheduleConnect();
   } catch (e) {
