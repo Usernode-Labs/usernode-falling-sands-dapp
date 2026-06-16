@@ -40,6 +40,20 @@ hosted conventions win.
   on-disk `snapshot.json` to a Postgres row in `sands_state`. Hydrates
   disk from Postgres on boot, mirrors disk writes back via a debounced
   `fs.watch`, flushes on `SIGTERM`. Engine.js is unaware of Postgres.
+- `lib/creations-store.js` — **Local to this repo.** Personal per-user
+  "saved creations" gallery. A creation is a full canvas snapshot (same
+  `cells_b64`/`buffers:3` shape the engine/`loadSnapshot` use) captured
+  client-side and uploaded. Unlike the chain-derived leaderboard,
+  creations are **user uploads**, so Postgres (`sands_creations`, public
+  table) is authoritative; degrades to in-memory if `DATABASE_URL` is
+  unset. Ownership is client-asserted via the `owner` wallet pubkey (same
+  JWT-less trust model as the leaderboard's `me=<pubkey>`). `seedDemo()`
+  seeds `demo_*` rows (incl. a stable share id) under
+  `IS_STAGING || LOCAL_DEV`.
+- `lib/creations-routes.js` — **Local to this repo.** Mounts the public
+  `/__sands/creations` HTTP surface (POST / GET list / GET by id / DELETE /
+  PATCH) onto Express; shared between `server.js` and
+  `tests/test-creations-api.js`.
 - `wasm/crate/` — **In-repo, tracked** Rust+WASM physics engine source
   (originally from `Usernode-Labs/sandspiel`, now vendored here). The
   Dockerfile compiles it via `wasm-pack` at deploy time. This replaces the

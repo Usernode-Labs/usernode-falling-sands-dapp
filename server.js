@@ -53,6 +53,8 @@ const {
 } = require("./lib/dapp-server");
 const { createSnapshotStore } = require("./lib/snapshot-store");
 const { createLeaderboardStore } = require("./lib/leaderboard-store");
+const { createCreationsStore } = require("./lib/creations-store");
+const { mountCreationsRoutes } = require("./lib/creations-routes");
 const createEngine = require("./engine");
 
 loadEnvFile();
@@ -120,6 +122,7 @@ const nodeStatusProbe = createNodeStatusProbe({
 let engine = null;
 let engineCache = null;
 let leaderboard = null;
+let creations = null;
 
 nodeStatusProbe.registerStream("sands", () => !!engineCache && engineCache.isStreamReady());
 nodeStatusProbe.start();
@@ -248,6 +251,19 @@ function trimToLatestAdminReset(txs, adminPubkey) {
   if (IS_STAGING || LOCAL_DEV) leaderboard.seedDemo();
   leaderboard.start();
 
+  // ── Personal saved-creations gallery ─────────────────────────────
+  // User uploads (canvas snapshots), NOT chain-derived — Postgres is
+  // authoritative; degrades to in-memory if DATABASE_URL is unset. The
+  // HTTP routes are registered unconditionally below; they 503 until
+  // this assignment lands.
+  creations = createCreationsStore({
+    databaseUrl: process.env.DATABASE_URL || null,
+    width: engine.config.width,
+    height: engine.config.height,
+  });
+  await creations.init();
+  if (IS_STAGING || LOCAL_DEV) await creations.seedDemo();
+
   const scoredProcessTransaction = (rawTx) => {
     try {
       leaderboard.ingest(rawTx);
@@ -313,6 +329,13 @@ app.get("/__sands/leaderboard", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(payload);
 });
+
+// ── Personal saved-creations gallery (public, same JWT-less surface) ─────────
+// Ownership is client-asserted via the `owner` wallet pubkey, exactly like
+// the leaderboard's `me=<pubkey>`. Routes live in lib/creations-routes.js so
+// the same handlers are exercised by tests. `getStore` returns null until the
+// async init below assigns `creations` — handlers 503 until then.
+mountCreationsRoutes(app, { express, getStore: () => creations });
 
 // ── Global usernames cache ───────────────────────────────────────────────────
 // Same shared wiring as engineCache, just for the global usernames address.
@@ -506,6 +529,11 @@ async function shutdown(signal) {
     if (leaderboard) await leaderboard.flushNow();
   } catch (e) {
     console.warn(`[server] leaderboard flush failed: ${e.message}`);
+  }
+  try {
+    if (creations) await creations.flushNow();
+  } catch (e) {
+    console.warn(`[server] creations flush failed: ${e.message}`);
   }
   try {
     server.close(() => process.exit(0));
