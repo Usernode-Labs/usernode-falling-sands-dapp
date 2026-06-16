@@ -71,6 +71,8 @@ pub struct Universe {
     generation: u8,
     rng: SplitMix64,
     pub flags: u32,
+    pub gravity_dx: i32,
+    pub gravity_dy: i32,
 }
 
 pub struct SandApi<'a> {
@@ -180,6 +182,21 @@ impl<'a> SandApi<'a> {
             6 => (-1, 1),
             _ => (0, 1),
         }
+    }
+
+    pub fn gravity(&self) -> (i32, i32) {
+        (self.universe.gravity_dx, self.universe.gravity_dy)
+    }
+
+    pub fn anti_gravity(&self) -> (i32, i32) {
+        (-self.universe.gravity_dx, -self.universe.gravity_dy)
+    }
+
+    // Returns the vector perpendicular to gravity, scaled by lr (±1).
+    // With gravity (gx, gy), the perpendicular is (-gy*lr, gx*lr).
+    pub fn perp(&self, lr: i32) -> (i32, i32) {
+        let (gx, gy) = self.gravity();
+        (-gy * lr, gx * lr)
     }
 }
 
@@ -326,6 +343,11 @@ impl Universe {
         self.flags = flags;
     }
 
+    pub fn set_gravity(&mut self, dx: i32, dy: i32) {
+        self.gravity_dx = dx.max(-1).min(1);
+        self.gravity_dy = dy.max(-1).min(1);
+    }
+
     pub fn generation(&self) -> u8 {
         self.generation
     }
@@ -372,6 +394,8 @@ impl Universe {
             generation: 0,
             rng,
             flags: 0,
+            gravity_dx: 0,
+            gravity_dy: 1,
         }
     }
 }

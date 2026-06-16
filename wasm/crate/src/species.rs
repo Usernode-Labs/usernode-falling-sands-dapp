@@ -115,29 +115,31 @@ impl Species {
 }
 
 pub fn update_sand(cell: Cell, mut api: SandApi) {
-    let dx = api.rand_dir_2();
+    let lr = api.rand_dir_2();
+    let (gx, gy) = api.gravity();
+    let (px, py) = api.perp(lr);
 
-    let nbr = api.get(0, 1);
+    let nbr = api.get(gx, gy);
     if nbr.species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(0, 1, cell);
-    } else if api.get(dx, 1).species == Species::Empty {
+        api.set(gx, gy, cell);
+    } else if api.get(gx + px, gy + py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 1, cell);
+        api.set(gx + px, gy + py, cell);
     } else if nbr.species == Species::Water
         || nbr.species == Species::Gas
         || nbr.species == Species::Oil
         || nbr.species == Species::Acid
     {
         api.set(0, 0, nbr);
-        api.set(0, 1, cell);
+        api.set(gx, gy, cell);
     } else {
         api.set(0, 0, cell);
     }
 }
 
 pub fn update_dust(cell: Cell, mut api: SandApi) {
-    let dx = api.rand_dir();
+    let lr = api.rand_dir();
     let fluid = api.get_fluid();
 
     if fluid.pressure > 120 {
@@ -160,16 +162,18 @@ pub fn update_dust(cell: Cell, mut api: SandApi) {
         return;
     }
 
-    let nbr = api.get(0, 1);
+    let (gx, gy) = api.gravity();
+    let (px, py) = api.perp(lr);
+    let nbr = api.get(gx, gy);
     if nbr.species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(0, 1, cell);
+        api.set(gx, gy, cell);
     } else if nbr.species == Species::Water {
         api.set(0, 0, nbr);
-        api.set(0, 1, cell);
-    } else if api.get(dx, 1).species == Species::Empty {
+        api.set(gx, gy, cell);
+    } else if api.get(gx + px, gy + py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 1, cell);
+        api.set(gx + px, gy + py, cell);
     } else {
         api.set(0, 0, cell);
     }
@@ -195,18 +199,19 @@ pub fn update_stone(cell: Cell, mut api: SandApi) {
         return;
     }
 
-    let nbr = api.get(0, 1);
+    let (gx, gy) = api.gravity();
+    let nbr = api.get(gx, gy);
     let nbr_species = nbr.species;
     if nbr_species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(0, 1, cell);
+        api.set(gx, gy, cell);
     } else if nbr_species == Species::Water
         || nbr_species == Species::Gas
         || nbr_species == Species::Oil
         || nbr_species == Species::Acid
     {
         api.set(0, 0, nbr);
-        api.set(0, 1, cell);
+        api.set(gx, gy, cell);
     } else {
         api.set(0, 0, cell);
     }
@@ -237,10 +242,11 @@ pub fn update_water(cell: Cell, mut api: SandApi) {
         return;
     }
 
-    let mut dx = api.rand_dir();
-    let below = api.get(0, 1);
-    let dx1 = api.get(dx, 1);
-    // let mut dx0 = api.get(dx, 0);
+    let mut lr = api.rand_dir();
+    let (gx, gy) = api.gravity();
+    let (px, py) = api.perp(lr);
+    let below = api.get(gx, gy);
+    let diag1 = api.get(gx + px, gy + py);
     //fall down
     if below.species == Species::Empty || below.species == Species::Oil {
         api.set(0, 0, below);
@@ -249,37 +255,38 @@ pub fn update_water(cell: Cell, mut api: SandApi) {
             //randomize direction when falling sometimes
             ra = 100 + api.rand_int(50) as u8;
         }
-        api.set(0, 1, Cell { ra, ..cell });
+        api.set(gx, gy, Cell { ra, ..cell });
 
         return;
-    } else if dx1.species == Species::Empty || dx1.species == Species::Oil {
+    } else if diag1.species == Species::Empty || diag1.species == Species::Oil {
         //fall diagonally
-        api.set(0, 0, dx1);
-        api.set(dx, 1, cell);
+        api.set(0, 0, diag1);
+        api.set(gx + px, gy + py, cell);
         return;
-    } else if api.get(-dx, 1).species == Species::Empty {
+    } else if api.get(gx - px, gy - py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(-dx, 1, cell);
+        api.set(gx - px, gy - py, cell);
         return;
     }
     let left = cell.ra % 2 == 0;
-    dx = if left { 1 } else { -1 };
-    let dx0 = api.get(dx, 0);
-    let dxd = api.get(dx * 2, 0);
+    lr = if left { 1 } else { -1 };
+    let (lpx, lpy) = api.perp(lr);
+    let dx0 = api.get(lpx, lpy);
+    let dxd = api.get(lpx * 2, lpy * 2);
 
     if dx0.species == Species::Empty && dxd.species == Species::Empty {
         // scoot double
         api.set(0, 0, dxd);
-        api.set(2 * dx, 0, Cell { rb: 6, ..cell });
-        let (dx, dy) = api.rand_vec_8();
-        let nbr = api.get(dx, dy);
+        api.set(lpx * 2, lpy * 2, Cell { rb: 6, ..cell });
+        let (rx, ry) = api.rand_vec_8();
+        let nbr = api.get(rx, ry);
 
         // spread opinion
         if nbr.species == Species::Water {
             if nbr.ra % 2 != cell.ra % 2 {
                 api.set(
-                    dx,
-                    dy,
+                    rx,
+                    ry,
                     Cell {
                         ra: cell.ra,
                         ..cell
@@ -289,14 +296,14 @@ pub fn update_water(cell: Cell, mut api: SandApi) {
         }
     } else if dx0.species == Species::Empty || dx0.species == Species::Oil {
         api.set(0, 0, dx0);
-        api.set(dx, 0, Cell { rb: 3, ..cell });
-        let (dx, dy) = api.rand_vec_8();
-        let nbr = api.get(dx, dy);
+        api.set(lpx, lpy, Cell { rb: 3, ..cell });
+        let (rx, ry) = api.rand_vec_8();
+        let nbr = api.get(rx, ry);
         if nbr.species == Species::Water {
             if nbr.ra % 2 != cell.ra % 2 {
                 api.set(
-                    dx,
-                    dy,
+                    rx,
+                    ry,
                     Cell {
                         ra: cell.ra,
                         ..cell
@@ -305,13 +312,13 @@ pub fn update_water(cell: Cell, mut api: SandApi) {
             }
         }
     } else if cell.rb == 0 {
-        if api.get(-dx, 0).species == Species::Empty {
+        if api.get(-lpx, -lpy).species == Species::Empty {
             // bump
             api.set(
                 0,
                 0,
                 Cell {
-                    ra: ((cell.ra as i32) + dx) as u8,
+                    ra: ((cell.ra as i32) + lr) as u8,
                     ..cell
                 },
             );
@@ -419,21 +426,23 @@ pub fn update_oil(cell: Cell, mut api: SandApi) {
         return;
     }
 
-    if api.get(0, 1).species == Species::Empty {
+    let (gx, gy) = api.gravity();
+    let (px, py) = api.perp(dx); // dx from rand_vec provides the lateral random direction
+    if api.get(gx, gy).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(0, 1, new_cell);
-    } else if api.get(dx, 1).species == Species::Empty {
+        api.set(gx, gy, new_cell);
+    } else if api.get(gx + px, gy + py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 1, new_cell);
-    } else if api.get(-dx, 1).species == Species::Empty {
+        api.set(gx + px, gy + py, new_cell);
+    } else if api.get(gx - px, gy - py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(-dx, 1, new_cell);
-    } else if api.get(dx, 0).species == Species::Empty {
+        api.set(gx - px, gy - py, new_cell);
+    } else if api.get(px, py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 0, new_cell);
-    } else if api.get(-dx, 0).species == Species::Empty {
+        api.set(px, py, new_cell);
+    } else if api.get(-px, -py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(-dx, 0, new_cell);
+        api.set(-px, -py, new_cell);
     } else {
         api.set(0, 0, new_cell);
     }
@@ -530,28 +539,30 @@ pub fn update_steam(cell: Cell, mut api: SandApi) {
         return;
     }
 
-    // 3. Rise: prefer straight up, then a diagonal up, then a sideways spread.
+    // 3. Rise: prefer straight up (anti-gravity), then a diagonal, then sideways.
     //    Each successful move cools the cell a little (ra--) and clears the
     //    trapped counter. ra >= STEAM_CONDENSE_RA here, so ra - 1 never wraps.
-    let dx = api.rand_dir();
+    let lr = api.rand_dir();
+    let (agx, agy) = api.anti_gravity();
+    let (px, py) = api.perp(lr);
     let cooled = Cell {
         ra: cell.ra - 1,
         rb: 0,
         ..cell
     };
-    if api.get(0, -1).species == Species::Empty {
+    if api.get(agx, agy).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(0, -1, cooled);
+        api.set(agx, agy, cooled);
         return;
     }
-    if api.get(dx, -1).species == Species::Empty {
+    if api.get(agx + px, agy + py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, -1, cooled);
+        api.set(agx + px, agy + py, cooled);
         return;
     }
-    if api.get(dx, 0).species == Species::Empty {
+    if api.get(px, py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 0, cooled);
+        api.set(px, py, cooled);
         return;
     }
 
@@ -689,21 +700,23 @@ pub fn update_rocket(cell: Cell, mut api: SandApi) {
 
     if ra == 0 {
         //falling (dormant)
-        let dx = api.rand_dir();
-        let nbr = api.get(0, 1);
+        let lr = api.rand_dir();
+        let (gx, gy) = api.gravity();
+        let (px, py) = api.perp(lr);
+        let nbr = api.get(gx, gy);
         if nbr.species == Species::Empty {
             api.set(0, 0, EMPTY_CELL);
-            api.set(0, 1, cell);
-        } else if api.get(dx, 1).species == Species::Empty {
+            api.set(gx, gy, cell);
+        } else if api.get(gx + px, gy + py).species == Species::Empty {
             api.set(0, 0, EMPTY_CELL);
-            api.set(dx, 1, cell);
+            api.set(gx + px, gy + py, cell);
         } else if nbr.species == Species::Water
             || nbr.species == Species::Gas
             || nbr.species == Species::Oil
             || nbr.species == Species::Acid
         {
             api.set(0, 0, nbr);
-            api.set(0, 1, cell);
+            api.set(gx, gy, cell);
         } else {
             api.set(0, 0, cell);
         }
@@ -919,17 +932,21 @@ pub fn update_lava(cell: Cell, mut api: SandApi) {
                 clock: 0,
             },
         );
-    } else if api.get(0, 1).species == Species::Empty {
-        api.set(0, 0, EMPTY_CELL);
-        api.set(0, 1, cell);
-    } else if api.get(dx, 1).species == Species::Empty {
-        api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 1, cell);
-    } else if api.get(dx, 0).species == Species::Empty {
-        api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 0, cell);
     } else {
-        api.set(0, 0, cell);
+        let (gx, gy) = api.gravity();
+        let (px, py) = api.perp(dx); // dx from rand_vec provides the lateral random direction
+        if api.get(gx, gy).species == Species::Empty {
+            api.set(0, 0, EMPTY_CELL);
+            api.set(gx, gy, cell);
+        } else if api.get(gx + px, gy + py).species == Species::Empty {
+            api.set(0, 0, EMPTY_CELL);
+            api.set(gx + px, gy + py, cell);
+        } else if api.get(px, py).species == Species::Empty {
+            api.set(0, 0, EMPTY_CELL);
+            api.set(px, py, cell);
+        } else {
+            api.set(0, 0, cell);
+        }
     }
 }
 
@@ -1230,31 +1247,33 @@ pub fn update_seed(cell: Cell, mut api: SandApi) {
     if rb == 0 {
         //falling
 
-        let dxf = api.rand_dir(); //falling dx
-        let nbr_species_below = api.get(dxf, 1).species;
-        if nbr_species_below == Species::Sand
-            || nbr_species_below == Species::Plant
-            || nbr_species_below == Species::Fungus
+        let lrf = api.rand_dir(); //falling lateral direction
+        let (gx, gy) = api.gravity();
+        let (pfx, pfy) = api.perp(lrf);
+        let nbr_species_grav_diag = api.get(gx + pfx, gy + pfy).species;
+        if nbr_species_grav_diag == Species::Sand
+            || nbr_species_grav_diag == Species::Plant
+            || nbr_species_grav_diag == Species::Fungus
         {
             let rb = (api.rand_int(253) + 1) as u8;
             api.set(0, 0, Cell { rb, ..cell });
             return;
         }
 
-        let nbr = api.get(0, 1);
+        let nbr = api.get(gx, gy);
         if nbr.species == Species::Empty {
             api.set(0, 0, EMPTY_CELL);
-            api.set(0, 1, cell);
-        } else if api.get(dxf, 1).species == Species::Empty {
+            api.set(gx, gy, cell);
+        } else if api.get(gx + pfx, gy + pfy).species == Species::Empty {
             api.set(0, 0, EMPTY_CELL);
-            api.set(dxf, 1, cell);
+            api.set(gx + pfx, gy + pfy, cell);
         } else if nbr.species == Species::Water
             || nbr.species == Species::Gas
             || nbr.species == Species::Oil
             || nbr.species == Species::Acid
         {
             api.set(0, 0, nbr);
-            api.set(0, 1, cell);
+            api.set(gx, gy, cell);
         } else {
             api.set(0, 0, cell);
         }
@@ -1455,50 +1474,52 @@ pub fn update_fungus(cell: Cell, mut api: SandApi) {
 }
 
 pub fn update_acid(cell: Cell, mut api: SandApi) {
-    let dx = api.rand_dir();
+    let lr = api.rand_dir();
 
     let ra = cell.ra;
     let mut degraded = cell.clone();
     degraded.ra = ra - 60;
-    // i = api.rand_int(100);
     if degraded.ra < 80 {
         degraded = EMPTY_CELL;
     }
-    if api.get(0, 1).species == Species::Empty {
+    let (gx, gy) = api.gravity();
+    let (agx, agy) = api.anti_gravity();
+    let (px, py) = api.perp(lr);
+    if api.get(gx, gy).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(0, 1, cell);
-    } else if api.get(dx, 0).species == Species::Empty {
+        api.set(gx, gy, cell);
+    } else if api.get(px, py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(dx, 0, cell);
-    } else if api.get(-dx, 0).species == Species::Empty {
+        api.set(px, py, cell);
+    } else if api.get(-px, -py).species == Species::Empty {
         api.set(0, 0, EMPTY_CELL);
-        api.set(-dx, 0, cell);
+        api.set(-px, -py, cell);
     } else {
-        if api.get(0, 1).species != Species::Wall
-            && api.get(0, 1).species != Species::Acid
-            && api.get(0, 1).species != Species::BlackHole
+        if api.get(gx, gy).species != Species::Wall
+            && api.get(gx, gy).species != Species::Acid
+            && api.get(gx, gy).species != Species::BlackHole
         {
             api.set(0, 0, EMPTY_CELL);
-            api.set(0, 1, degraded);
-        } else if api.get(dx, 0).species != Species::Wall
-            && api.get(dx, 0).species != Species::Acid
-            && api.get(dx, 0).species != Species::BlackHole
+            api.set(gx, gy, degraded);
+        } else if api.get(px, py).species != Species::Wall
+            && api.get(px, py).species != Species::Acid
+            && api.get(px, py).species != Species::BlackHole
         {
             api.set(0, 0, EMPTY_CELL);
-            api.set(dx, 0, degraded);
-        } else if api.get(-dx, 0).species != Species::Wall
-            && api.get(-dx, 0).species != Species::Acid
-            && api.get(-dx, 0).species != Species::BlackHole
+            api.set(px, py, degraded);
+        } else if api.get(-px, -py).species != Species::Wall
+            && api.get(-px, -py).species != Species::Acid
+            && api.get(-px, -py).species != Species::BlackHole
         {
             api.set(0, 0, EMPTY_CELL);
-            api.set(-dx, 0, degraded);
-        } else if api.get(0, -1).species != Species::Wall
-            && api.get(0, -1).species != Species::Acid
-            && api.get(0, -1).species != Species::BlackHole
-            && api.get(0, -1).species != Species::Empty
+            api.set(-px, -py, degraded);
+        } else if api.get(agx, agy).species != Species::Wall
+            && api.get(agx, agy).species != Species::Acid
+            && api.get(agx, agy).species != Species::BlackHole
+            && api.get(agx, agy).species != Species::Empty
         {
             api.set(0, 0, EMPTY_CELL);
-            api.set(0, -1, degraded);
+            api.set(agx, agy, degraded);
         } else {
             api.set(0, 0, cell);
         }

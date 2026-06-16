@@ -294,6 +294,43 @@
     }
     .quick-btn.recent { flex-shrink: 0; }
 
+    /* ── Tilt indicator ─────────────────────────────── */
+    #tilt-indicator {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 32px; height: 32px;
+      font-size: 20px;
+      color: var(--accent);
+      flex-shrink: 0;
+      pointer-events: none;
+      user-select: none;
+    }
+    #tilt-indicator.visible { display: flex; }
+
+    /* iOS "Enable tilt" permission bar */
+    #tilt-permission-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px var(--sp-3);
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #tilt-enable-btn {
+      font-size: var(--fs-sm);
+      padding: 5px 14px;
+      border-radius: 99px;
+      border: 1.5px solid var(--accent);
+      color: var(--accent);
+      background: transparent;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    #tilt-enable-btn:hover { background: rgba(93,211,158,0.12); }
+    #tilt-enable-btn:active { background: rgba(93,211,158,0.22); }
+
     #brush-label {
       font-size: var(--fs-xs);
       color: var(--text-muted);
@@ -1723,6 +1760,7 @@
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
   <button class="quick-btn" id="clear-canvas-btn" type="button" title="Clear canvas">&#x1F5D1;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
+  <span id="tilt-indicator" aria-label="Gravity direction" title="Gravity direction"></span>
   <!-- The .tb-right slot is always rendered so the toolbar layout
        doesn't snap when the user starts/finishes drawing, but its
        children start hidden — refreshFabs() reveals them only while
@@ -1739,6 +1777,10 @@
       <div class="tx-label">Sending...</div>
     </div>
   </div>
+</div>
+
+<div id="tilt-permission-bar" hidden>
+  <button id="tilt-enable-btn" type="button">&#x1F4F1; Enable tilt</button>
 </div>
 
 <div id="picker-overlay" class="modal-overlay">
@@ -3677,6 +3719,11 @@ let FRAME_SIZE = 0;
 // startPaint, and the resync handler). Toggled by enterViewMode/exitViewMode.
 let viewingCreation = false;
 
+// ── Gyroscope gravity state ──────────────────────────────────────────────────
+// Client-local only. engine.js on the server always uses (0, 1).
+let currentGravityDx = 0;
+let currentGravityDy = 1;
+
 let simTick = 0;              // current simulation tick number
 let clientActiveUntilTick = 0; // server's physics window end — client freezes past this
 let pendingTxs = [];          // transactions buffered for future ticks, sorted by tick
@@ -3856,10 +3903,101 @@ function fastForwardTo(targetTick) {
   }
 }
 
+// ── Gyroscope / tilt control ─────────────────────────────────────────────────
+
+const TILT_DEAD = 0.26; // sin(~15°) — ignore small tilts
+
+const TILT_ARROWS = {
+  '0,1':  '↓', '0,-1': '↑',
+  '1,0':  '→', '-1,0': '←',
+  '1,1':  '↘', '-1,1': '↙',
+  '1,-1': '↗', '-1,-1':'↖',
+  '0,0':  '',
+};
+
+function updateTiltIndicator(dx, dy) {
+  const el = document.getElementById('tilt-indicator');
+  if (!el) return;
+  const arrow = TILT_ARROWS[`${dx},${dy}`];
+  if (arrow) {
+    el.textContent = arrow;
+    el.classList.add('visible');
+  } else {
+    el.textContent = '';
+    el.classList.remove('visible');
+  }
+}
+
+function handleOrientation(e) {
+  const beta  = e.beta  ?? 0; // -180..180  (front/back tilt)
+  const gamma = e.gamma ?? 0; // -90..90    (left/right tilt)
+
+  // Map device angles to a unit gravity vector in canvas-space.
+  // gamma → horizontal gravity component; beta → vertical component.
+  const rawGx = Math.sin(gamma * Math.PI / 180);
+  const rawGy = Math.sin((90 - Math.abs(beta)) * Math.PI / 180);
+
+  // Quantize to -1/0/1 with deadband.
+  const qdx = Math.abs(rawGx) < TILT_DEAD ? 0 : Math.sign(rawGx);
+  const qdy = Math.abs(rawGy) < TILT_DEAD ? 0 : Math.sign(rawGy);
+
+  // Fallback to normal down-gravity when flat on a table.
+  currentGravityDx = qdx;
+  currentGravityDy = (qdx === 0 && qdy === 0) ? 1 : qdy;
+
+  updateTiltIndicator(currentGravityDx, currentGravityDy);
+}
+
+function initTiltControl() {
+  // Try preferred absolute-orientation event first, fall back to relative.
+  const evtName = ('ondeviceorientationabsolute' in window)
+    ? 'deviceorientationabsolute'
+    : 'deviceorientation';
+
+  function attachListeners() {
+    window.addEventListener(evtName, handleOrientation, { passive: true });
+    // Ensure tilt indicator is shown once an event fires.
+    updateTiltIndicator(currentGravityDx, currentGravityDy);
+  }
+
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // iOS 13+ requires a user gesture to grant motion permission.
+    // Check if already granted this session.
+    if (sessionStorage.getItem('tiltPermission') === 'granted') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => { if (state === 'granted') attachListeners(); })
+        .catch(() => {});
+    } else {
+      const bar = document.getElementById('tilt-permission-bar');
+      const btn = document.getElementById('tilt-enable-btn');
+      if (bar && btn) {
+        bar.hidden = false;
+        btn.addEventListener('click', () => {
+          DeviceOrientationEvent.requestPermission()
+            .then(state => {
+              if (state === 'granted') {
+                sessionStorage.setItem('tiltPermission', 'granted');
+                bar.hidden = true;
+                attachListeners();
+              }
+            })
+            .catch(() => {});
+        }, { once: true });
+      }
+    }
+  } else if (typeof DeviceOrientationEvent !== 'undefined') {
+    // Non-iOS: events are available without a permission prompt.
+    attachListeners();
+  }
+  // On desktop (no DeviceOrientationEvent) we just leave gravity at (0, 1).
+}
+
 // ── Simulation tick (called at 30Hz) ────────────────────────────────────────
 
 function simTick30Hz() {
   if (!universe) return;
+  if (universe.set_gravity) universe.set_gravity(currentGravityDx, currentGravityDy);
 
   // Gallery view mode: play the saved creation's own physics forward
   // locally, but ignore the chain entirely — no WS draw application and
@@ -4393,6 +4531,7 @@ function startRound() {
     if (sourcesEnabledInit) flags |= 2; // FLAG_SOURCES
     if (plantAbsorbs) flags |= 4;  // FLAG_PLANT_ABSORBS
     if (flags) universe.set_flags(flags);
+    initTiltControl();
 
     _bootStage = "ws";
     markEngineProgress();
