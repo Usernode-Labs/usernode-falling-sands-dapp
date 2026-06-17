@@ -53,6 +53,8 @@ const {
 } = require("./lib/dapp-server");
 const { createSnapshotStore } = require("./lib/snapshot-store");
 const { createLeaderboardStore } = require("./lib/leaderboard-store");
+const { createCreationsStore } = require("./lib/creations-store");
+const { mountCreationsRoutes } = require("./lib/creations-routes");
 const createEngine = require("./engine");
 
 loadEnvFile();
@@ -120,6 +122,7 @@ const nodeStatusProbe = createNodeStatusProbe({
 let engine = null;
 let engineCache = null;
 let leaderboard = null;
+let creations = null;
 
 nodeStatusProbe.registerStream("sands", () => !!engineCache && engineCache.isStreamReady());
 nodeStatusProbe.start();
@@ -223,6 +226,36 @@ function trimToLatestAdminReset(txs, adminPubkey) {
     snapshotDir: SNAPSHOT_DIR,
   });
   engine.attachWebSocket(server);
+
+  // Start listening only after the WebSocket handler is attached so the
+  // HTTP server never accepts upgrade requests before the ws.Server exists.
+  // Node.js destroys unhandled upgrade sockets immediately, causing every
+  // client WS attempt to fail and showing SND-LOAD-WS within seconds of
+  // page load. SV's waitForHealthy probe polls /health and will wait here;
+  // once the port opens, /health responds 200 and traffic is routed.
+  await new Promise((resolve) => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`\nFalling Sands server running at http://localhost:${PORT}`);
+
+      const nets = require("os").networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const iface of nets[name]) {
+          if (iface.family === "IPv4" && !iface.internal) {
+            console.log(`   LAN: http://${iface.address}:${PORT}`);
+          }
+        }
+      }
+
+      console.log(`  App pubkey:    ${process.env.APP_PUBKEY ? APP_PUBKEY.slice(0, 24) + "…" : "(default sentinel — local-dev only)"}`);
+      console.log(`  Admin pubkey:  ${ADMIN_PUBKEY ? ADMIN_PUBKEY.slice(0, 24) + "…" : "(unset)"}`);
+      console.log(`  Node RPC:      ${NODE_RPC_URL}${USE_NODE_STREAM ? " (direct-node SSE on)" : ""}`);
+      console.log(`  Snapshot dir:  ${SNAPSHOT_DIR}`);
+      console.log(`  Persistence:   ${process.env.DATABASE_URL ? "Postgres" : "disk-only (DATABASE_URL unset)"}`);
+      console.log(`  Mode:          ${LOCAL_DEV ? "LOCAL DEV (mock API)" : "production"}\n`);
+      resolve();
+    });
+  });
+
   await engine.init();
   engine.startTickLoop();
 
@@ -247,6 +280,19 @@ function trimToLatestAdminReset(txs, adminPubkey) {
   leaderboard.ingestAll(fetchedTransactions); // FULL untrimmed history
   if (IS_STAGING || LOCAL_DEV) leaderboard.seedDemo();
   leaderboard.start();
+
+  // ── Personal saved-creations gallery ─────────────────────────────
+  // User uploads (canvas snapshots), NOT chain-derived — Postgres is
+  // authoritative; degrades to in-memory if DATABASE_URL is unset. The
+  // HTTP routes are registered unconditionally below; they 503 until
+  // this assignment lands.
+  creations = createCreationsStore({
+    databaseUrl: process.env.DATABASE_URL || null,
+    width: engine.config.width,
+    height: engine.config.height,
+  });
+  await creations.init();
+  if (IS_STAGING || LOCAL_DEV) await creations.seedDemo();
 
   const scoredProcessTransaction = (rawTx) => {
     try {
@@ -313,6 +359,13 @@ app.get("/__sands/leaderboard", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(payload);
 });
+
+// ── Personal saved-creations gallery (public, same JWT-less surface) ─────────
+// Ownership is client-asserted via the `owner` wallet pubkey, exactly like
+// the leaderboard's `me=<pubkey>`. Routes live in lib/creations-routes.js so
+// the same handlers are exercised by tests. `getStore` returns null until the
+// async init below assigns `creations` — handlers 503 until then.
+mountCreationsRoutes(app, { express, getStore: () => creations });
 
 // ── Global usernames cache ───────────────────────────────────────────────────
 // Same shared wiring as engineCache, just for the global usernames address.
@@ -508,6 +561,11 @@ async function shutdown(signal) {
     console.warn(`[server] leaderboard flush failed: ${e.message}`);
   }
   try {
+    if (creations) await creations.flushNow();
+  } catch (e) {
+    console.warn(`[server] creations flush failed: ${e.message}`);
+  }
+  try {
     server.close(() => process.exit(0));
   } catch (_) {
     process.exit(0);
@@ -518,23 +576,7 @@ async function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// ── Start ────────────────────────────────────────────────────────────────────
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`\nFalling Sands server running at http://localhost:${PORT}`);
-
-  const nets = require("os").networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const iface of nets[name]) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        console.log(`   LAN: http://${iface.address}:${PORT}`);
-      }
-    }
-  }
-
-  console.log(`  App pubkey:    ${process.env.APP_PUBKEY ? APP_PUBKEY.slice(0, 24) + "…" : "(default sentinel — local-dev only)"}`);
-  console.log(`  Admin pubkey:  ${ADMIN_PUBKEY ? ADMIN_PUBKEY.slice(0, 24) + "…" : "(unset)"}`);
-  console.log(`  Node RPC:      ${NODE_RPC_URL}${USE_NODE_STREAM ? " (direct-node SSE on)" : ""}`);
-  console.log(`  Snapshot dir:  ${SNAPSHOT_DIR}`);
-  console.log(`  Persistence:   ${process.env.DATABASE_URL ? "Postgres" : "disk-only (DATABASE_URL unset)"}`);
-  console.log(`  Mode:          ${LOCAL_DEV ? "LOCAL DEV (mock API)" : "production"}\n`);
-});
+// server.listen() has been moved into the async init() IIFE above,
+// immediately after engine.attachWebSocket(server). This guarantees the
+// ws.Server is installed before the first HTTP connection is accepted,
+// preventing the SND-LOAD-WS race on cold boots.

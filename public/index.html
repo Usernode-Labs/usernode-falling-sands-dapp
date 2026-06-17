@@ -267,6 +267,9 @@
       gap: var(--sp-1);
       align-items: center;
     }
+    /* Compact mode: fitToolbar() adds .compact to #quick-bar on narrow
+       viewports to shrink the featured boxes/gap before any box is dropped. */
+    .quick-bar.compact { gap: 4px; }
     .quick-btn {
       width: 36px; height: 36px;
       border: 2px solid var(--border-strong);
@@ -279,11 +282,14 @@
       -webkit-tap-highlight-color: transparent;
       flex-shrink: 0;
     }
+    .quick-bar.compact .quick-btn { width: 28px; height: 28px; }
     .quick-btn:hover { transform: scale(1.08); border-color: rgba(255,255,255,0.35); }
     .quick-btn:active { transform: scale(0.94); }
     /* Currently-selected recent swatch — mirrors the picker's active ring so
        selection is visible in the quick bar, not only in #current-swatch. */
-    .quick-btn.recent.active {
+    .quick-btn.recent.active,
+    .quick-btn.eraser.active,
+    .quick-btn.active {
       border-color: #fff;
       box-shadow: 0 0 8px rgba(93,211,158,0.45);
     }
@@ -292,7 +298,14 @@
       font-size: 18px;
       color: var(--text-muted);
     }
-    .quick-btn.recent { flex-shrink: 0; }
+    .quick-bar.compact .quick-btn.eraser { font-size: 14px; }
+    .quick-btn.featured { flex-shrink: 0; }
+    /* Highlight the quick box (featured element or eraser) matching the
+       current selection. */
+    .quick-btn.active {
+      border-color: #fff;
+      box-shadow: 0 0 6px rgba(255,255,255,0.45);
+    }
 
     #brush-label {
       font-size: var(--fs-xs);
@@ -343,6 +356,55 @@
       font-family: var(--font-mono);
       color: var(--text-muted);
       min-width: 16px;
+      text-align: center;
+    }
+
+    #speed-label {
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+    #sim-speed {
+      width: 84px;
+      accent-color: var(--warn);
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-3);
+      cursor: pointer;
+      outline: none;
+    }
+    #sim-speed::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--warn);
+      border: 2px solid var(--surface-1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      transition: transform 0.1s;
+    }
+    #sim-speed::-webkit-slider-thumb:active { transform: scale(1.15); }
+    #sim-speed::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--warn);
+      border: 2px solid var(--surface-1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    #sim-speed::-moz-range-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-3);
+    }
+    #speed-value {
+      font-size: var(--fs-xs);
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      min-width: 20px;
       text-align: center;
     }
 
@@ -759,6 +821,13 @@
       background: var(--surface-2);
       border-radius: 50%;
     }
+    #clear-canvas-btn {
+      font-size: var(--fs-md);
+      background: var(--surface-2);
+      border-radius: 50%;
+      color: var(--text-muted);
+    }
+    #clear-canvas-btn:hover { color: var(--danger-soft); }
 
     /* ── Header score chip ───────────────────────────── */
     #score-chip {
@@ -1027,6 +1096,193 @@
       transition: color 0.15s;
     }
     #tl-explorer-link:hover { color: var(--accent); text-decoration: underline; }
+
+    /* ── Gallery overlay ─────────────────────────────── */
+    #gallery-overlay { z-index: 250; }
+    #gallery-content {
+      padding: var(--sp-4) 22px 22px;
+      max-width: 460px;
+      width: 92%;
+      max-height: 84vh;
+      max-height: 84dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #gallery-content h2 {
+      margin: 0 0 4px;
+      font-size: var(--fs-lg);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    #gallery-sub {
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      margin: 0 0 12px;
+      min-height: 14px;
+    }
+    #gallery-grid {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--sp-3);
+      margin: 0 -4px;
+      padding: 0 4px 4px;
+    }
+    @media (min-width: 420px) {
+      #gallery-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .gal-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .gal-thumb {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      background:
+        linear-gradient(160deg, #c2a36b 0%, #9c7b46 45%, #6b86a8 46%, #41648c 100%);
+      object-fit: cover;
+      display: block;
+      cursor: pointer;
+    }
+    .gal-meta { padding: 6px 8px; }
+    .gal-title {
+      font-size: var(--fs-xs);
+      color: var(--text);
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .gal-date {
+      font-size: 10px;
+      color: var(--text-faint);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+    .gal-actions {
+      display: flex;
+      gap: 4px;
+      padding: 0 8px 8px;
+    }
+    .gal-actions button {
+      flex: 1;
+      padding: 5px 0;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .gal-actions button:active { transform: scale(0.96); }
+    .gal-actions button.gal-open { background: var(--accent); color: var(--bg, #0b0e14); border-color: var(--accent); }
+    .gal-actions button.gal-del { color: #e88; }
+    .gal-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: var(--text-faint);
+      padding: 36px 12px;
+      font-size: var(--fs-sm);
+      line-height: 1.5;
+    }
+
+    /* ── Save dialog ─────────────────────────────────── */
+    #save-overlay { z-index: 260; }
+    #save-content {
+      padding: var(--sp-4) 22px 20px;
+      max-width: 340px;
+      width: 90%;
+    }
+    #save-content h2 {
+      margin: 0 0 10px;
+      font-size: var(--fs-lg);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    #save-content label {
+      display: block;
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    #save-name {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: var(--fs-md);
+      margin-bottom: 14px;
+    }
+    .save-actions, .rename-actions {
+      display: flex;
+      gap: var(--sp-2);
+      justify-content: flex-end;
+    }
+    .save-actions button, .rename-actions button {
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .save-actions button.primary, .rename-actions button.primary {
+      background: var(--accent);
+      color: var(--bg, #0b0e14);
+      border-color: var(--accent);
+    }
+    .save-actions button:active, .rename-actions button:active { transform: scale(0.97); }
+
+    /* ── Viewing-a-creation banner ───────────────────── */
+    #view-banner {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(env(safe-area-inset-top, 0px) + 56px);
+      z-index: 240;
+      display: none;
+      align-items: center;
+      gap: var(--sp-3);
+      max-width: 92vw;
+      padding: 8px 10px 8px 14px;
+      background: var(--surface-1);
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      box-shadow: var(--shadow-modal);
+      font-size: var(--fs-sm);
+    }
+    #view-banner.open { display: flex; }
+    #view-banner .vb-text {
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #view-banner .vb-text strong { color: var(--accent); }
+    #view-back {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: var(--bg, #0b0e14);
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #view-back:active { transform: scale(0.96); }
 
     #info-overlay { z-index: 200; }
     #info-content {
@@ -1558,7 +1814,7 @@
       <rect x="14" y="21" width="4" height="4" rx="1" fill="#ff6b35"></rect>
       <rect x="21" y="21" width="4" height="4" rx="1" fill="#4a90d9"></rect>
     </svg>
-    <span class="brand-word">Falling Sands</span>
+    <span class="brand-word">Usernode Falling Sands</span>
   </div>
   <!-- Live status chrome — reparented from the old top status bar.
        Same IDs and state-class contracts (#status .ok/.err,
@@ -1588,9 +1844,16 @@
   <label id="brush-label">Brush</label>
   <input id="brush-size" type="range" min="1" max="15" value="4" />
   <span id="brush-value">4</span>
+  <label id="speed-label" style="display:none">Speed</label>
+  <input id="sim-speed" type="range" min="1" max="5" value="3" style="display:none" />
+  <span id="speed-value" style="display:none">1×</span>
+  <button class="quick-btn" id="save-btn" type="button" title="Save this canvas to your gallery">&#x1F4BE;</button>
+  <button class="quick-btn" id="gallery-btn" type="button" title="Your saved creations">&#x1F5BC;</button>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
   <button class="quick-btn" id="transaction-log-btn" type="button" title="Transaction History">📋</button>
+  <button class="quick-btn" id="clear-canvas-btn" type="button" title="Clear canvas">&#x1F5D1;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
+  <button class="quick-btn" id="pause-btn" type="button" title="Pause" style="display:none">&#x23F8;</button>
   <!-- The .tb-right slot is always rendered so the toolbar layout
        doesn't snap when the user starts/finishes drawing, but its
        children start hidden — refreshFabs() reveals them only while
@@ -1657,6 +1920,47 @@
     <button id="tl-show-more" style="display:none;" type="button">Show more</button>
     <a id="tl-explorer-link" target="_blank" rel="noopener noreferrer" style="display:none;"></a>
   </div>
+</div>
+
+<!-- Save creation dialog -->
+<div id="save-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="save-title">
+  <div id="save-content" class="modal-surface">
+    <h2 id="save-title">Save creation</h2>
+    <label for="save-name">Name your creation</label>
+    <input id="save-name" type="text" maxlength="120" autocomplete="off" />
+    <div class="save-actions">
+      <button id="save-cancel" type="button">Cancel</button>
+      <button id="save-confirm" type="button" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Personal gallery -->
+<div id="gallery-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gallery-title">
+  <div id="gallery-content" class="modal-surface">
+    <h2 id="gallery-title">Your gallery</h2>
+    <p id="gallery-sub"></p>
+    <div id="gallery-grid"><div class="gal-empty">Loading…</div></div>
+  </div>
+</div>
+
+<!-- Rename creation dialog -->
+<div id="rename-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+  <div id="save-content" class="modal-surface">
+    <h2 id="rename-title">Rename creation</h2>
+    <label for="rename-name">New name</label>
+    <input id="rename-name" type="text" maxlength="120" autocomplete="off" />
+    <div class="rename-actions">
+      <button id="rename-cancel" type="button">Cancel</button>
+      <button id="rename-confirm" type="button" class="primary">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- Viewing-a-saved-creation banner -->
+<div id="view-banner">
+  <span class="vb-text" id="view-banner-text">Viewing a saved creation</span>
+  <button id="view-back" type="button">Back to live</button>
 </div>
 
 <div id="admin-confirm-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
@@ -2421,6 +2725,9 @@ function tryDismissLoader() {
   if (_loaderTestForce) return; // dev-only: keep a forced ?loaderTest state visible
   if (!_engineLoaderReady || !_chainLoaderReady) return;
   _loaderDismissed = true;
+  // Reset the WS boot patience clock so any future reconnect (post-session)
+  // doesn't inherit the startup timestamp and give up too early.
+  wsFirstAttemptMs = 0;
   // Tear down the decorative loaders so no timer/retry outlives the overlay.
   stopLoaderTips();
   stopSocialStrip();
@@ -2720,6 +3027,8 @@ let HEIGHT = 450;
 const CELL_BYTES = 4;
 const TICK_HZ = 30;
 const TICK_INTERVAL_MS = 1000 / TICK_HZ;
+const SPEED_STEPS = [0.25, 0.5, 1, 2, 4]; // maps slider position (1–5) to multiplier
+let simSpeedMult = 1;
 const RENDER_DELAY_MS = 5000;
 const CHECKPOINT_INTERVAL_TICKS = TICK_HZ * 5; // every 5 seconds
 const MAX_CHECKPOINTS = 24;
@@ -2783,7 +3092,7 @@ const SPECIES = [
   { id: 8,  name: "Lava",  color: "#ff4500" },
   { id: 9,  name: "Ice",   color: "#a6dcef" },
   { id: 4,  name: "Gas",   color: "#d4d4d4" },
-  { id: 12, name: "Acid",  color: "#b8ff00" },
+  { id: 12, name: "Acid",  color: "#39ff14" },
   { id: 16, name: "Oil",   color: "#3a3a3a" },
   { id: 14, name: "Dust",  color: "#ff69b4" },
   { id: 5,  name: "Clone", color: "#9c27b0" },
@@ -2812,13 +3121,14 @@ let brushSize = 4;
 // ELEMENT SELECTOR
 // =============================================================================
 
-let recentIds = [1, 3, 6];
-const MAX_RECENT = 3;
-// How many recent-species swatches the quick bar is currently allowed to show.
-// fitToolbar() shrinks this whenever the toolbar would overflow the viewport
-// (narrow phones, especially when the send/discard fab-bar is visible) and
-// restores up to MAX_RECENT once there is room again.
-let recentLimit = MAX_RECENT;
+// Featured elements pinned into the quick bar, always shown in this order:
+// Water, Fire, Plant, Acid. Replaces the old MRU "recents" list so the four
+// interactive showcase elements are always one tap away.
+const FEATURED_IDS = [3, 6, 11, 12];
+// How many featured swatches the quick bar is currently allowed to show.
+// fitToolbar() drops boxes from the END (Acid first) only as a last resort
+// on very narrow viewports, after shrinking box size and hiding the label.
+let featuredLimit = FEATURED_IDS.length;
 const speciesById = {};
 SPECIES.forEach(sp => { speciesById[sp.id] = sp; });
 
@@ -2923,37 +3233,40 @@ updateCritterLegend();
 
 function refreshQuickBar() {
   quickBar.innerHTML = "";
-  const visibleRecents = recentIds.slice(0, recentLimit);
-  visibleRecents.forEach(id => {
+  const visibleFeatured = FEATURED_IDS.slice(0, featuredLimit);
+  visibleFeatured.forEach(id => {
     const sp = speciesById[id];
     if (!sp) return;
     const btn = document.createElement("div");
-    btn.className = "quick-btn recent" + (id === selectedSpecies ? " active" : "");
+    btn.className = "quick-btn featured" + (id === selectedSpecies ? " active" : "");
     btn.style.background = sp.color;
     btn.title = sp.name;
     btn.addEventListener("click", () => selectSpecies(id));
     quickBar.appendChild(btn);
   });
   const eraser = document.createElement("div");
-  eraser.className = "quick-btn eraser";
+  eraser.className = "quick-btn eraser" + (selectedSpecies === 0 ? " active" : "");
   eraser.title = "Erase";
   eraser.textContent = "\uD83E\uDDF9";
-  eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); });
+  eraser.addEventListener("click", () => { selectedSpecies = 0; refreshCurrent(); refreshQuickBar(); });
   quickBar.appendChild(eraser);
 }
 
 // Adaptive toolbar fit. The fab-bar (.tb-right) reserves a fixed 104px
 // slot via `flex: 0 0 104px` so the layout doesn't snap when the user
 // starts/finishes a drawing session — ✕/✓ + budget meter always have
-// space, and recents/brush stay sized for the worst case from the start.
+// space, and the featured boxes/brush stay sized for the worst case.
 //
-// What can still overflow: when the viewport is narrow enough that
-// even (current swatch + sep + eraser + brush slider + info + 104px
-// fab-bar) doesn't fit, we need to drop pieces off the left/middle.
+// What can still overflow: when the viewport is narrow enough that even
+// (current swatch + sep + four featured boxes + eraser + brush slider +
+// info + 104px fab-bar) doesn't fit, we need to shed width.
 //
-// Strategy: count recent swatches down from MAX_RECENT until the
-// toolbar fits. As a last resort (zero recents and still clipping)
-// hide the "Brush" text label — the slider stays usable.
+// Strategy, in order, each step re-measured before escalating:
+//   1. Shrink the featured boxes + gap (.compact on #quick-bar).
+//   2. Hide the "Brush" text label (the slider stays usable).
+//   3. As a last resort, drop featured boxes from the END (Acid first)
+//      until it fits — the eraser is always kept.
+// All four boxes come back at full size as soon as there's room again.
 let _fitInProgress = false;
 function fitToolbar() {
   if (!toolbarEl || _fitInProgress) return;
@@ -2961,13 +3274,15 @@ function fitToolbar() {
   try {
     const fabBarEl = document.getElementById("fab-bar");
     const brushLabelEl = document.getElementById("brush-label");
+    const speedLabelEl = document.getElementById("speed-label");
 
     // Reset to the most-permissive state and re-measure from there so the
-    // recents/brush-label come back as soon as space is available again.
-    let limit = MAX_RECENT;
-    recentLimit = limit;
+    // boxes/brush-label come back as soon as space is available again.
+    featuredLimit = FEATURED_IDS.length;
+    quickBar.classList.remove("compact");
     refreshQuickBar();
     if (brushLabelEl) brushLabelEl.style.display = "";
+    if (speedLabelEl && DEBUG_MODE) speedLabelEl.style.display = "";
 
     // Overflow detection by bounding-rect comparison. We can't rely on
     // toolbarEl.scrollWidth here: body{overflow:hidden} + #toolbar's
@@ -2990,14 +3305,23 @@ function fitToolbar() {
       return false;
     }
 
-    while (limit > 0 && overflowing()) {
-      limit--;
-      recentLimit = limit;
-      refreshQuickBar();
+    // 1. Shrink the featured boxes/gap.
+    if (overflowing()) {
+      quickBar.classList.add("compact");
     }
 
+    if (speedLabelEl && DEBUG_MODE) {
+      speedLabelEl.style.display = overflowing() ? "none" : "";
+    }
+    // 2. Hide the brush label.
     if (brushLabelEl) {
       brushLabelEl.style.display = overflowing() ? "none" : "";
+    }
+
+    // 3. Last resort: drop featured boxes from the end (Acid first).
+    while (featuredLimit > 0 && overflowing()) {
+      featuredLimit--;
+      refreshQuickBar();
     }
 
     // Layout diagnostic — prints once per fit pass.
@@ -3007,7 +3331,8 @@ function fitToolbar() {
       const fabRect = fabBarEl ? fabBarEl.getBoundingClientRect() : null;
       console.log("[toolbar-fit]", {
         viewport: vw,
-        recentLimit,
+        featuredLimit,
+        compact: quickBar.classList.contains("compact"),
         brushLabelHidden: brushLabelEl ? brushLabelEl.style.display === "none" : null,
         toolbarRight: Math.round(tbRect.right),
         fabBarLeft: fabRect ? Math.round(fabRect.left) : null,
@@ -3023,17 +3348,7 @@ function fitToolbar() {
 }
 
 function selectSpecies(id) {
-  if (id === 0) { selectedSpecies = 0; refreshCurrent(); return; }
-  const prev = selectedSpecies;
   selectedSpecies = id;
-  if (prev !== 0 && prev !== id) {
-    recentIds = recentIds.filter(r => r !== id && r !== prev);
-    recentIds.unshift(prev);
-    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
-  } else {
-    recentIds = recentIds.filter(r => r !== id);
-    if (recentIds.length > MAX_RECENT) recentIds.length = MAX_RECENT;
-  }
   refreshCurrent();
   refreshQuickBar();
 }
@@ -3057,7 +3372,7 @@ function rebuildPicker() {
     pickerGrid.appendChild(h);
   };
 
-  const elements = SPECIES.filter(s => s.id !== 0 && !s.source);
+  const elements = SPECIES.filter(s => !s.source);
   const sources = sourcesEnabled ? SPECIES.filter(s => s.source) : [];
 
   if (elements.length) {
@@ -3073,7 +3388,7 @@ rebuildPicker();
 
 function openPicker() {
   const items = pickerGrid.querySelectorAll(".picker-item");
-  const visible = SPECIES.filter(s => s.id !== 0 && (!s.source || sourcesEnabled));
+  const visible = SPECIES.filter(s => !s.source || sourcesEnabled);
   items.forEach((el, i) => {
     el.classList.toggle("active", visible[i] && visible[i].id === selectedSpecies);
   });
@@ -3091,6 +3406,19 @@ brushSlider.addEventListener("input", () => {
   if (brushValueEl) brushValueEl.textContent = String(brushSize);
 });
 if (brushValueEl) brushValueEl.textContent = String(brushSize);
+
+const speedSlider  = document.getElementById("sim-speed");
+const speedValueEl = document.getElementById("speed-value");
+if (speedSlider) {
+  speedSlider.addEventListener("input", () => {
+    simSpeedMult = SPEED_STEPS[parseInt(speedSlider.value, 10) - 1];
+    if (speedValueEl) speedValueEl.textContent = simSpeedMult + "\xd7";
+    if (simInterval) {
+      clearInterval(simInterval);
+      simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
+    }
+  });
+}
 refreshCurrent();
 refreshQuickBar();
 fitToolbar();
@@ -3249,7 +3577,10 @@ if (typeof createREGL === "undefined") {
 
 let regl, dataTexture;
 try {
-  regl = createREGL({ canvas, attributes: { preserveDrawingBuffer: false } });
+  // preserveDrawingBuffer:true so captureThumbnail() can read the rendered
+  // canvas back via toDataURL at save time (the gallery needs a PNG tile).
+  // Minor per-GPU cost; acceptable for a casual sandbox.
+  regl = createREGL({ canvas, attributes: { preserveDrawingBuffer: true } });
   dataTexture = regl.texture({
     width: HEIGHT, height: WIDTH, data: cellData,
     min: 'nearest', mag: 'nearest',
@@ -3384,8 +3715,8 @@ void main() {
   else if (type == 5) { hue = 0.9; saturation = 0.3; }
   else if (type == 6) { hue = d.g * 0.1; saturation = 0.7; lightness = 0.7 + (d.g * 0.3) + ((noise + 0.8) * 0.5); }
   else if (type == 7) { hue = d.g * 0.1; saturation = 0.3; lightness = 0.3 + d.g * 0.3; }
-  else if (type == 8) { hue = d.g * 0.1; lightness = 0.7 + d.g * 0.25 + noise * 0.1; }
-  else if (type == 9) { hue = 0.6; saturation = 0.4; lightness = 0.7 + d.g * 0.5; }
+  else if (type == 8) { hue = d.g * 0.1; saturation = 0.85; lightness = 0.7 + d.g * 0.25 + noise * 0.1; lightness += (noise + 0.8) * 0.3 * clamp(d.g * 2.0, 0.0, 1.0); }
+  else if (type == 9) { hue = 0.6; saturation = 0.4; lightness = 0.7 + d.g * 0.5 + noise * 0.05; }
   else if (type == 10) { hue = 0.9; saturation = 0.4; lightness = 1.0; }
   else if (type == 11) { hue = 0.4; saturation = 0.4; }
   else if (type == 12) { hue = 0.18; saturation = 0.9; lightness = 0.8 + d.g * 0.2 + noise * 0.05; }
@@ -3485,6 +3816,11 @@ let universe = null;
 let wasmMemory = null;
 let wasmPrng = null;
 let FRAME_SIZE = 0;
+
+// Gallery "view mode": when true the client is previewing a saved/shared
+// creation locally and the live chain stream is paused (see simTick30Hz,
+// startPaint, and the resync handler). Toggled by enterViewMode/exitViewMode.
+let viewingCreation = false;
 
 let simTick = 0;              // current simulation tick number
 let clientActiveUntilTick = 0; // server's physics window end — client freezes past this
@@ -3670,6 +4006,19 @@ function fastForwardTo(targetTick) {
 function simTick30Hz() {
   if (!universe) return;
 
+  // Gallery view mode: play the saved creation's own physics forward
+  // locally, but ignore the chain entirely — no WS draw application and
+  // no wall-clock fast-forward (simTick was reset to the creation's tick,
+  // which may be far in the past). This keeps another player's live
+  // strokes from painting over the saved piece. Back-to-live clears the
+  // flag and resyncs. See enterViewMode()/exitViewMode().
+  if (viewingCreation) {
+    universe.tick();
+    simTick++;
+    ticksThisSecond++;
+    return;
+  }
+
   const wallTick = timestampToTick(Date.now());
   let ticksToRun = Math.max(1, wallTick - simTick);
 
@@ -3736,6 +4085,14 @@ function simTick30Hz() {
 const DEBUG_MODE = new URLSearchParams(window.location.search).has("debug");
 const debugHashEl = document.getElementById("debug-hash");
 if (DEBUG_MODE && debugHashEl) debugHashEl.classList.add("visible");
+if (DEBUG_MODE) {
+  const speedEls = [
+    document.getElementById("speed-label"),
+    document.getElementById("sim-speed"),
+    document.getElementById("speed-value"),
+  ];
+  for (const el of speedEls) { if (el) el.style.display = ""; }
+}
 
 async function computeCellHash() {
   if (!universe || !wasmMemory || !FRAME_SIZE) return null;
@@ -3797,6 +4154,13 @@ const WS_POOL_SIZE     = 3;
 const WS_ROUND_TIMEOUT = 800;
 const WS_ROUND_GAP     = 100;
 const WS_MAX_ROUNDS    = 20;
+// After WS_MAX_ROUNDS all fail, enter a slow-retry phase rather than
+// immediately showing the error. This covers any residual timing window
+// where the server is still initialising (chain fetch / cold replay) after
+// the page has already loaded. Only the hard error surfaces after
+// WS_BOOT_PATIENCE_MS of total failed attempts.
+const WS_SLOW_RETRY_INTERVAL_MS = 5_000;
+const WS_BOOT_PATIENCE_MS       = 3 * 60 * 1000;
 
 // Application-level heartbeat. The browser WS API doesn't surface
 // protocol-level pings/pongs to JS, so we send our own. Server already
@@ -3819,6 +4183,7 @@ const WS_QUIET_AFTER_MS        = 12_000;
 let wsRound = 0;
 let wsTotalAttempts = 0;
 let lastWsActivityMs = 0;
+let wsFirstAttemptMs = 0; // set on first startRound(); reset by tryDismissLoader()
 
 const debugLines = [];
 function dbg(msg) {
@@ -3866,8 +4231,9 @@ function handleMessage(event) {
 
       setLoadingPhase("CANVAS", 50);
 
-      // Load snapshot
-      if (msg.snapshot) {
+      // Load snapshot — unless we're previewing a saved creation (a late
+      // reconnect must not clobber the view; Back-to-live resyncs).
+      if (msg.snapshot && !viewingCreation) {
         loadSnapshot(msg.snapshot);
       }
 
@@ -3903,7 +4269,7 @@ function handleMessage(event) {
 
       // Fast-forward behind the loading bar up to wall-clock time (capped
       // at the server's window end — beyond that we go live at 30Hz).
-      {
+      if (!viewingCreation) {
         const wallTick = timestampToTick(Date.now());
         const targetTick = msg.frozen ? simTick : Math.min(wallTick, clientActiveUntilTick);
         if (targetTick > simTick) {
@@ -3937,7 +4303,15 @@ function handleMessage(event) {
       }
 
       if (simInterval) clearInterval(simInterval);
-      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+      simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
+      simPaused = false;
+      const pauseBtn = document.getElementById("pause-btn");
+      if (pauseBtn) pauseBtn.style.display = "";
+      updatePauseButton(false);
+
+      // Shared-link deep entry: if the page was opened with ?creation=<id>,
+      // drop into a preview of that creation now that the engine is live.
+      try { if (window.Gallery && window.Gallery.maybeOpenShared) window.Gallery.maybeOpenShared(); } catch (_) {}
 
     } else if (msg.type === "resync") {
       // Error-recovery fallback: reload snapshot and restart simulation.
@@ -3949,6 +4323,13 @@ function handleMessage(event) {
       if (msg.adminPubkey !== undefined) {
         adminPubkey = msg.adminPubkey || null;
         maybeShowAdminUI();
+      }
+
+      // Don't let a resync (admin reset / reconnect) paint over the saved
+      // creation the user is previewing. Back-to-live reloads live state.
+      if (viewingCreation) {
+        console.log("[sands-resync] suppressed while viewing a saved creation");
+        return;
       }
 
       if (simInterval) clearInterval(simInterval);
@@ -3986,7 +4367,9 @@ function handleMessage(event) {
       console.log(`[sands-resync] recovered at tick ${simTick}`);
       statusEl.className = "ok";
       statusEl.textContent = "Running locally";
-      simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+      simInterval = setInterval(simTick30Hz, (1000 / TICK_HZ) / simSpeedMult);
+      simPaused = false;
+      updatePauseButton(false);
 
     } else if (msg.type === "loading") {
       const prog = typeof msg.progress === "number" ? msg.progress : 0;
@@ -4015,9 +4398,32 @@ function handleMessage(event) {
 }
 
 let simInterval = null;
+let simPaused = false;
+
+function updatePauseButton(paused) {
+  const btn = document.getElementById("pause-btn");
+  if (!btn) return;
+  btn.textContent = paused ? "▶" : "⏸";
+  btn.title = paused ? "Resume" : "Pause";
+  btn.classList.toggle("active", paused);
+}
+
+function togglePause() {
+  if (simPaused) {
+    simInterval = setInterval(simTick30Hz, 1000 / TICK_HZ);
+    simPaused = false;
+  } else {
+    if (simInterval) { clearInterval(simInterval); simInterval = null; }
+    simPaused = true;
+  }
+  updatePauseButton(simPaused);
+}
+
+document.getElementById("pause-btn").addEventListener("click", togglePause);
 
 function startRound() {
   if (document.visibilityState === "hidden") return;
+  wsFirstAttemptMs = wsFirstAttemptMs || Date.now();
   wsRound++;
   const rid = wsRound;
   dbg(`round ${rid}`);
@@ -4091,6 +4497,9 @@ function startRound() {
         dbg(`close code=${ev.code}`);
         ws = null;
         if (simInterval) { clearInterval(simInterval); simInterval = null; }
+        simPaused = false;
+        const pauseBtn = document.getElementById("pause-btn");
+        if (pauseBtn) pauseBtn.style.display = "none";
         statusEl.className = "err";
         setTimeout(startRound, WS_ROUND_GAP);
       }
@@ -4112,9 +4521,23 @@ function startRound() {
       dbg("Gave up after " + WS_MAX_ROUNDS + " rounds");
       statusEl.className = "err";
       statusEl.textContent = "Connection failed — tap to retry";
-      // If the loader is still up, the status bar is occluded by it — show
-      // the failure (with a working Retry) inside the overlay instead.
+      // If the loader is still up and we haven't exhausted the boot
+      // patience window, enter slow-retry mode: update the loader text,
+      // reset the stall clock so the stall detector doesn't race us, then
+      // try again every WS_SLOW_RETRY_INTERVAL_MS. Only show the hard
+      // SND-LOAD-WS card after WS_BOOT_PATIENCE_MS of total failed attempts.
       if (!_loaderDismissed && !_engineLoaderReady) {
+        const elapsed = Date.now() - (wsFirstAttemptMs || Date.now());
+        if (elapsed < WS_BOOT_PATIENCE_MS) {
+          dbg("slow-retry mode — server still starting?");
+          if (_loaderStatus) {
+            _loaderStatus.textContent = "Server is loading — still connecting…";
+          }
+          markEngineProgress(); // reset stall clock so stall detector doesn't race
+          wsRound = 0;
+          setTimeout(startRound, WS_SLOW_RETRY_INTERVAL_MS);
+          return;
+        }
         showLoaderError({ phase: "WS" });
       }
       document.body.addEventListener("click", () => { wsRound = 0; startRound(); }, { once: true });
@@ -4713,7 +5136,24 @@ btnDiscard.addEventListener("click", () => {
   refreshFabs();
 });
 
+document.getElementById("clear-canvas-btn").addEventListener("click", () => {
+  // Clear pending local strokes
+  pendingStrokes = [];
+  usedBudget = 0;
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  refreshFabs();
+  // Zero out the WASM simulation grid
+  if (universe && wasmMemory && FRAME_SIZE) {
+    new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE).fill(0);
+    new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE).fill(0);
+    new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE).fill(0);
+  }
+});
+
 function startPaint(e) {
+  // Drawing is disabled while previewing a saved creation — strokes there
+  // would be meaningless (they're not on the shared canvas).
+  if (viewingCreation) return;
   painting = true;
   lastPaintPos = null;
   dragStartIdx = pendingStrokes.length;
@@ -4911,6 +5351,13 @@ window.addEventListener("touchend", (e) => {
   // finger does NOT resume painting (no fresh touchstart fired for it).
   if (e.touches.length < 2) pinchState = null;
   if (e.touches.length === 0) endPaint();
+});
+
+// OS-cancelled touches (incoming call, system gesture, app switch). Clean up
+// both pinch and paint state so the canvas never gets stuck.
+window.addEventListener("touchcancel", () => {
+  pinchState = null;
+  endPaint();
 });
 
 // ── Info overlay toggle ─────────────────────────────────────────────────────
@@ -5263,10 +5710,404 @@ window.Leaderboard = (function () {
   return { onTx, refresh, open };
 })();
 
+// ── Capture / restore helpers (shared by Gallery + view mode) ────────────────
+//
+// A "creation" is the full canvas at a moment in time, in the SAME shape the
+// server snapshot uses (cells|winds|burns concatenated, pako-deflated,
+// base64) so the existing loadSnapshot() restores it with no new buffer code.
+
+function captureCreation() {
+  if (!universe || !wasmMemory || !FRAME_SIZE || typeof pako === "undefined") return null;
+  try {
+    const cells = new Uint8Array(wasmMemory.buffer, universe.cells(), FRAME_SIZE);
+    const winds = new Uint8Array(wasmMemory.buffer, universe.winds(), FRAME_SIZE);
+    const burns = new Uint8Array(wasmMemory.buffer, universe.burns(), FRAME_SIZE);
+    const raw = new Uint8Array(FRAME_SIZE * 3);
+    raw.set(cells, 0);
+    raw.set(winds, FRAME_SIZE);
+    raw.set(burns, FRAME_SIZE * 2);
+    const compressed = pako.deflate(raw);
+    // base64 in chunks so String.fromCharCode.apply doesn’t blow the stack.
+    let bin = "";
+    const CH = 0x8000;
+    for (let i = 0; i < compressed.length; i += CH) {
+      bin += String.fromCharCode.apply(null, compressed.subarray(i, i + CH));
+    }
+    return {
+      cells_b64: btoa(bin),
+      buffers: 3,
+      prng_state: wasmPrng && wasmPrng.getState ? wasmPrng.getState() : 0,
+      generation: universe.generation ? universe.generation() : 0,
+      wasm_rng_state: universe.rng_state ? String(universe.rng_state()) : "0",
+      tick: simTick,
+      width: WIDTH,
+      height: HEIGHT,
+    };
+  } catch (e) {
+    console.warn("[gallery] capture failed:", e);
+    return null;
+  }
+}
+
+// Small PNG of the rendered canvas for the gallery grid. Needs the regl
+// context’s preserveDrawingBuffer:true (set at init) so the WebGL canvas
+// reads back. Returns a data: URL, or null on failure (placeholder tile).
+function captureThumbnail() {
+  try {
+    const TH = 150;
+    const tw = Math.max(1, Math.round((TH * WIDTH) / HEIGHT));
+    const tmp = document.createElement("canvas");
+    tmp.width = tw;
+    tmp.height = TH;
+    const ctx = tmp.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, tw, TH);
+    return tmp.toDataURL("image/png");
+  } catch (e) {
+    console.warn("[gallery] thumbnail failed:", e);
+    return null;
+  }
+}
+
+// ── Personal gallery: save, browse/manage, share, view mode, deep link ───────
+window.Gallery = (function () {
+  const saveBtn = document.getElementById("save-btn");
+  const galleryBtn = document.getElementById("gallery-btn");
+
+  const saveOverlay = document.getElementById("save-overlay");
+  const saveNameEl = document.getElementById("save-name");
+  const saveCancel = document.getElementById("save-cancel");
+  const saveConfirm = document.getElementById("save-confirm");
+
+  const galOverlay = document.getElementById("gallery-overlay");
+  const galContent = document.getElementById("gallery-content");
+  const galGrid = document.getElementById("gallery-grid");
+  const galSub = document.getElementById("gallery-sub");
+
+  const renameOverlay = document.getElementById("rename-overlay");
+  const renameNameEl = document.getElementById("rename-name");
+  const renameCancel = document.getElementById("rename-cancel");
+  const renameConfirm = document.getElementById("rename-confirm");
+
+  const banner = document.getElementById("view-banner");
+  const bannerText = document.getElementById("view-banner-text");
+  const backBtn = document.getElementById("view-back");
+
+  let saving = false;
+  let renameTarget = null; // id currently being renamed
+  let sharedOpened = false;
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"’]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", ‘"’: "&quot;", "’": "&#39;" }[c])
+    );
+  }
+
+  function toast(msg) {
+    let t = document.getElementById("gal-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "gal-toast";
+      t.style.cssText =
+        "position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 80px);" +
+        "transform:translateX(-50%);z-index:300;background:var(--surface-1);" +
+        "border:1px solid var(--accent);color:var(--text);padding:9px 16px;" +
+        "border-radius:999px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,0.45);" +
+        "opacity:0;transition:opacity .2s ease;pointer-events:none;max-width:90vw;text-align:center;";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = "1";
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => { t.style.opacity = "0"; }, 2200);
+  }
+
+  function nameFor(pubkey) {
+    try {
+      if (window.UsernodeUsernames) return window.UsernodeUsernames.getUsernameSync(pubkey);
+    } catch (_) {}
+    return "user_" + (pubkey ? String(pubkey).slice(-6) : "??????");
+  }
+
+  function fmtDate(iso) {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch (_) { return ""; }
+  }
+
+  function defaultTitle() {
+    try {
+      return "Creation – " + new Date().toLocaleString(undefined,
+        { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    } catch (_) { return "Creation"; }
+  }
+
+  function closeOverlays() {
+    saveOverlay.classList.remove("open");
+    galOverlay.classList.remove("open");
+    renameOverlay.classList.remove("open");
+  }
+
+  // Resolve the signed-in wallet pubkey; null when no wallet is connected.
+  async function myAddr() {
+    try { return await getMyAddressCached(); } catch (_) { return null; }
+  }
+
+  function needWalletMsg() {
+    showError("Sign in with the Usernode app to save and view your gallery.");
+  }
+
+  // ── Save flow ──────────────────────────────────────────────────────
+  async function openSaveDialog() {
+    if (!universe || !FRAME_SIZE) { showError("Canvas still loading — try again in a moment."); return; }
+    const addr = await myAddr();
+    if (!addr) { needWalletMsg(); return; }
+    saveNameEl.value = defaultTitle();
+    saveOverlay.classList.add("open");
+    setTimeout(() => { try { saveNameEl.focus(); saveNameEl.select(); } catch (_) {} }, 60);
+  }
+
+  async function doSave() {
+    if (saving) return;
+    const addr = await myAddr();
+    if (!addr) { closeOverlays(); needWalletMsg(); return; }
+    const snapshot = captureCreation();
+    if (!snapshot) { showError("Couldn’t capture the canvas."); return; }
+    const thumb = captureThumbnail();
+    const title = (saveNameEl.value || "").trim() || defaultTitle();
+
+    saving = true;
+    saveConfirm.disabled = true;
+    saveConfirm.textContent = "Saving…";
+    try {
+      const resp = await fetch("/__sands/creations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: addr, title, snapshot, thumb_b64: thumb }),
+      });
+      if (!resp.ok) {
+        let msg = "Save failed.";
+        try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch (_) {}
+        throw new Error(msg);
+      }
+      closeOverlays();
+      toast("Saved to your gallery");
+    } catch (e) {
+      showError(e.message || "Save failed.");
+    } finally {
+      saving = false;
+      saveConfirm.disabled = false;
+      saveConfirm.textContent = "Save";
+    }
+  }
+
+  // ── Gallery list ───────────────────────────────────────────────────
+  async function openGallery() {
+    const addr = await myAddr();
+    if (!addr) { needWalletMsg(); return; }
+    galOverlay.classList.add("open");
+    galGrid.innerHTML = ‘<div class="gal-empty">Loading…</div>’;
+    galSub.textContent = "";
+    try {
+      const resp = await fetch("/__sands/creations?owner=" + encodeURIComponent(addr), { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      renderGrid(Array.isArray(data.items) ? data.items : []);
+    } catch (e) {
+      galGrid.innerHTML = ‘<div class="gal-empty">Couldn’t load your gallery. Try again.</div>’;
+    }
+  }
+
+  function renderGrid(items) {
+    if (!items.length) {
+      galSub.textContent = "";
+      galGrid.innerHTML = ‘<div class="gal-empty">Nothing saved yet — tap 💾 to keep a copy of the canvas.</div>’;
+      return;
+    }
+    galSub.textContent = items.length + (items.length === 1 ? " creation" : " creations");
+    let html = "";
+    for (const it of items) {
+      const thumb = it.thumb_b64
+        ? ‘<img class="gal-thumb" data-id="’ + esc(it.id) + ‘" alt="" src="’ + esc(it.thumb_b64) + ‘">’
+        : ‘<div class="gal-thumb" data-id="’ + esc(it.id) + ‘"></div>’;
+      html +=
+        ‘<div class="gal-card" data-id="’ + esc(it.id) + ‘">’ +
+        thumb +
+        ‘<div class="gal-meta">’ +
+        ‘<div class="gal-title">’ + esc(it.title) + "</div>" +
+        ‘<div class="gal-date">’ + esc(fmtDate(it.created_at)) + "</div>" +
+        "</div>" +
+        ‘<div class="gal-actions">’ +
+        ‘<button class="gal-open" data-act="open" data-id="’ + esc(it.id) + ‘">Open</button>’ +
+        ‘<button data-act="share" data-id="’ + esc(it.id) + ‘">Share</button>’ +
+        ‘<button data-act="rename" data-id="’ + esc(it.id) + ‘" data-title="’ + esc(it.title) + ‘">Rename</button>’ +
+        ‘<button class="gal-del" data-act="delete" data-id="’ + esc(it.id) + ‘">Delete</button>’ +
+        "</div></div>";
+    }
+    galGrid.innerHTML = html;
+  }
+
+  async function fetchCreation(id) {
+    const resp = await fetch("/__sands/creations/" + encodeURIComponent(id), { cache: "no-store" });
+    if (resp.status === 404) return { gone: true };
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  }
+
+  async function openCreation(id) {
+    try {
+      const c = await fetchCreation(id);
+      if (c && c.gone) { showError("This creation is no longer available."); openGallery(); return; }
+      enterViewMode(c, { ownerName: nameFor(c.owner) });
+    } catch (e) {
+      showError("Couldn’t open that creation.");
+    }
+  }
+
+  function shareLink(id) {
+    const url = location.origin + location.pathname + "?creation=" + encodeURIComponent(id);
+    copyTextToClipboard(url).then((ok) => {
+      toast(ok ? "Link copied" : "Couldn’t copy — link: " + url);
+    });
+  }
+
+  async function deleteCreation(id) {
+    if (!confirm("Delete this creation? This can’t be undone.")) return;
+    const addr = await myAddr();
+    if (!addr) { needWalletMsg(); return; }
+    try {
+      const resp = await fetch(
+        "/__sands/creations/" + encodeURIComponent(id) + "?owner=" + encodeURIComponent(addr),
+        { method: "DELETE" }
+      );
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      toast("Deleted");
+      openGallery();
+    } catch (e) {
+      showError("Couldn’t delete that creation.");
+    }
+  }
+
+  function openRename(id, title) {
+    renameTarget = id;
+    renameNameEl.value = title || "";
+    renameOverlay.classList.add("open");
+    setTimeout(() => { try { renameNameEl.focus(); renameNameEl.select(); } catch (_) {} }, 60);
+  }
+
+  async function doRename() {
+    const id = renameTarget;
+    if (!id) return;
+    const addr = await myAddr();
+    if (!addr) { renameOverlay.classList.remove("open"); needWalletMsg(); return; }
+    const title = (renameNameEl.value || "").trim();
+    try {
+      const resp = await fetch("/__sands/creations/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: addr, title }),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      renameOverlay.classList.remove("open");
+      renameTarget = null;
+      openGallery();
+    } catch (e) {
+      showError("Couldn’t rename that creation.");
+    }
+  }
+
+  // ── View mode ──────────────────────────────────────────────────────
+  function enterViewMode(creation, opts) {
+    opts = opts || {};
+    if (!creation || !creation.snapshot) { showError("Couldn’t open that creation."); return; }
+    const snap = creation.snapshot;
+    if ((snap.width && snap.width !== WIDTH) || (snap.height && snap.height !== HEIGHT)) {
+      showError("That creation was made on a different canvas size and can’t be shown here.");
+      return;
+    }
+    closeOverlays();
+    viewingCreation = true;
+    try { loadSnapshot(snap); } catch (e) { viewingCreation = false; showError("Couldn’t load that creation."); return; }
+    const who = opts.ownerName ? " by " + esc(opts.ownerName) : "";
+    bannerText.innerHTML = "Viewing <strong>" + esc(creation.title || "a saved creation") + "</strong>" + who;
+    banner.classList.add("open");
+    try { if (typeof refreshFabs === "function") refreshFabs(); } catch (_) {}
+  }
+
+  async function exitViewMode() {
+    if (!viewingCreation) return;
+    viewingCreation = false;
+    banner.classList.remove("open");
+    // Resync to live: pull the freshest server snapshot, reset tick, drop
+    // buffered txs. New WS "tx" messages keep applying as usual afterward.
+    try {
+      const r = await fetch("/__sands/snapshot", { cache: "no-store" });
+      if (!r.ok) throw new Error("snapshot " + r.status);
+      const snap = await r.json();
+      pendingTxs = [];
+      loadSnapshot(snap);
+    } catch (e) {
+      // Couldn’t refetch — avoid a fast-forward storm by jumping the tick
+      // counter to wall-clock and clearing buffered txs.
+      pendingTxs = [];
+      try {
+        simTick = timestampToTick(Date.now());
+        clientActiveUntilTick = simTick;
+      } catch (_) {}
+    }
+  }
+
+  // ── Shared-link deep entry (?creation=<id>) ────────────────────────
+  let pendingSharedId = null;
+  try { pendingSharedId = new URLSearchParams(location.search).get("creation"); } catch (_) {}
+
+  async function maybeOpenShared() {
+    if (sharedOpened || !pendingSharedId) return;
+    sharedOpened = true;
+    try {
+      const c = await fetchCreation(pendingSharedId);
+      if (c && c.gone) { showError("This shared creation is no longer available."); return; }
+      enterViewMode(c, { ownerName: nameFor(c.owner) });
+    } catch (e) {
+      showError("Couldn’t open the shared creation.");
+    }
+  }
+
+  // ── Wiring ─────────────────────────────────────────────────────────
+  if (saveBtn) saveBtn.addEventListener("click", openSaveDialog);
+  if (galleryBtn) galleryBtn.addEventListener("click", openGallery);
+  if (saveCancel) saveCancel.addEventListener("click", () => saveOverlay.classList.remove("open"));
+  if (saveConfirm) saveConfirm.addEventListener("click", doSave);
+  if (saveNameEl) saveNameEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doSave(); });
+  if (renameCancel) renameCancel.addEventListener("click", () => { renameOverlay.classList.remove("open"); renameTarget = null; });
+  if (renameConfirm) renameConfirm.addEventListener("click", doRename);
+  if (renameNameEl) renameNameEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doRename(); });
+  if (backBtn) backBtn.addEventListener("click", exitViewMode);
+
+  if (saveOverlay) saveOverlay.addEventListener("click", (e) => { if (e.target === saveOverlay) saveOverlay.classList.remove("open"); });
+  if (renameOverlay) renameOverlay.addEventListener("click", (e) => { if (e.target === renameOverlay) { renameOverlay.classList.remove("open"); renameTarget = null; } });
+  if (galOverlay) galOverlay.addEventListener("click", (e) => { if (!galContent.contains(e.target)) galOverlay.classList.remove("open"); });
+
+  // Delegated card actions.
+  if (galGrid) galGrid.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-act], .gal-thumb");
+    if (!t) return;
+    const id = t.getAttribute("data-id");
+    if (!id) return;
+    const act = t.getAttribute("data-act");
+    if (!act || t.classList.contains("gal-thumb")) { openCreation(id); return; }
+    if (act === "open") openCreation(id);
+    else if (act === "share") shareLink(id);
+    else if (act === "rename") openRename(id, t.getAttribute("data-title") || "");
+    else if (act === "delete") deleteCreation(id);
+  });
+
+  return { maybeOpenShared, enterViewMode, exitViewMode, captureCreation };
+})();
+
 // ── Transaction Log ─────────────────────────────────────────────────────────
 //
 // Shows a reverse-chronological list of draw transactions sent to the canvas.
-// Mirrors the leaderboard's 50-initial + "Show more" to 200 + explorer link
+// Mirrors the leaderboard’s 50-initial + "Show more" to 200 + explorer link
 // pattern for consistent UX. Live updates prepend new transactions via the WS.
 window.TransactionLog = (function () {
   const overlay = document.getElementById("transaction-log-overlay");
@@ -5284,8 +6125,8 @@ window.TransactionLog = (function () {
   let fetching = false;
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    return String(s).replace(/[&<>"’]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", ‘"’: "&quot;", "’": "&#39;" }[c])
     );
   }
 
@@ -5342,18 +6183,18 @@ window.TransactionLog = (function () {
     const summary = drawData ? `${drawData.pixels} pixels, ${drawData.species} element${drawData.species !== 1 ? "s" : ""}` : "draw";
 
     return (
-      '<div class="tl-row">' +
-      '<span class="tl-name">' + escapeHtml(name) + '</span>' +
-      '<span class="tl-time">' + escapeHtml(time) + '</span>' +
-      '<span class="tl-summary">' + escapeHtml(summary) + '</span>' +
-      '</div>'
+      ‘<div class="tl-row">’ +
+      ‘<span class="tl-name">’ + escapeHtml(name) + ‘</span>’ +
+      ‘<span class="tl-time">’ + escapeHtml(time) + ‘</span>’ +
+      ‘<span class="tl-summary">’ + escapeHtml(summary) + ‘</span>’ +
+      ‘</div>’
     );
   }
 
   function render() {
     if (!listEl) return;
     if (!transactions.length) {
-      listEl.innerHTML = '<div class="tl-empty">No transactions yet.</div>';
+      listEl.innerHTML = ‘<div class="tl-empty">No transactions yet.</div>’;
     } else {
       let html = "";
       for (let i = 0; i < Math.min(loadedCount, transactions.length); i++) {
@@ -5414,7 +6255,7 @@ window.TransactionLog = (function () {
       render();
     } catch (e) {
       if (listEl && !transactions.length) {
-        listEl.innerHTML = '<div class="tl-empty">Transaction history unavailable.</div>';
+        listEl.innerHTML = ‘<div class="tl-empty">Transaction history unavailable.</div>’;
       }
     } finally {
       fetching = false;
