@@ -980,6 +980,122 @@
       padding-top: var(--sp-2);
       border-top: 1px dashed var(--border);
     }
+    #lb-count {
+      font-size: var(--fs-xs);
+      color: var(--text-label);
+      margin: 0 0 10px;
+      font-weight: 500;
+    }
+    #lb-show-more {
+      margin-top: var(--sp-3);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    #lb-show-more:hover { background: var(--surface-3); }
+    #lb-explorer-link {
+      display: block;
+      margin-top: var(--sp-3);
+      text-align: center;
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    #lb-explorer-link:hover { color: var(--accent); text-decoration: underline; }
+
+    /* ── Transaction Log overlay ────────────────────── */
+    #transaction-log-overlay { z-index: 250; }
+    #transaction-log-content {
+      padding: var(--sp-4) 22px 22px;
+      max-width: 420px;
+      width: 92%;
+      max-height: 82vh;
+      max-height: 82dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #transaction-log-content h2 {
+      margin: 0 0 4px;
+      font-size: var(--fs-lg);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    #tl-count {
+      font-size: var(--fs-xs);
+      color: var(--text-label);
+      margin: 0 0 10px;
+      font-weight: 500;
+    }
+    #tl-list {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 0 -6px;
+      padding: 0 6px;
+      flex: 1;
+    }
+    .tl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      font-size: var(--fs-sm);
+      border: 1px solid var(--border);
+    }
+    .tl-row + .tl-row { margin-top: 6px; }
+    .tl-name {
+      font-weight: 600;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tl-time {
+      font-size: var(--fs-xs);
+      color: var(--text-faint);
+      font-family: var(--font-mono);
+    }
+    .tl-summary {
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+    }
+    .tl-empty, .tl-loading {
+      text-align: center;
+      color: var(--text-faint);
+      padding: 28px 0;
+      font-size: var(--fs-sm);
+    }
+    #tl-show-more {
+      margin-top: var(--sp-3);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    #tl-show-more:hover { background: var(--surface-3); }
+    #tl-explorer-link {
+      display: block;
+      margin-top: var(--sp-3);
+      text-align: center;
+      font-size: var(--fs-xs);
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    #tl-explorer-link:hover { color: var(--accent); text-decoration: underline; }
 
     /* ── Gallery overlay ─────────────────────────────── */
     #gallery-overlay { z-index: 250; }
@@ -1734,6 +1850,7 @@
   <button class="quick-btn" id="save-btn" type="button" title="Save this canvas to your gallery">&#x1F4BE;</button>
   <button class="quick-btn" id="gallery-btn" type="button" title="Your saved creations">&#x1F5BC;</button>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
+  <button class="quick-btn" id="transaction-log-btn" type="button" title="Transaction History">📋</button>
   <button class="quick-btn" id="clear-canvas-btn" type="button" title="Clear canvas">&#x1F5D1;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
   <button class="quick-btn" id="pause-btn" type="button" title="Pause" style="display:none">&#x23F8;</button>
@@ -1783,12 +1900,25 @@
 <div id="leaderboard-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="leaderboard-title">
   <div id="leaderboard-content" class="modal-surface">
     <h2 id="leaderboard-title">Leaderboard</h2>
+    <p id="lb-count" style="display:none;"></p>
     <p id="lb-yours"></p>
     <div class="lb-tabs">
       <button class="lb-tab active" id="lb-tab-all" type="button" data-scope="all">All-time</button>
       <button class="lb-tab" id="lb-tab-daily" type="button" data-scope="daily">Today</button>
     </div>
     <div id="lb-list"><div class="lb-loading">Loading…</div></div>
+    <button id="lb-show-more" style="display:none;" type="button">Show more</button>
+    <a id="lb-explorer-link" target="_blank" rel="noopener noreferrer" style="display:none;"></a>
+  </div>
+</div>
+
+<div id="transaction-log-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="transaction-log-title">
+  <div id="transaction-log-content" class="modal-surface">
+    <h2 id="transaction-log-title">Transaction History</h2>
+    <p id="tl-count" style="display:none;"></p>
+    <div id="tl-list"><div class="tl-loading">Loading…</div></div>
+    <button id="tl-show-more" style="display:none;" type="button">Show more</button>
+    <a id="tl-explorer-link" target="_blank" rel="noopener noreferrer" style="display:none;"></a>
   </div>
 </div>
 
@@ -4260,6 +4390,7 @@ function handleMessage(event) {
     } else if (msg.type === "tx") {
       addPendingTx(msg);
       try { if (window.Leaderboard) window.Leaderboard.onTx(msg); } catch (_) {}
+      try { if (window.TransactionLog) window.TransactionLog.onTx(msg); } catch (_) {}
     }
   } catch (e) {
     console.warn("WS message parse error:", e);
@@ -5273,6 +5404,8 @@ window.Leaderboard = (function () {
   let myScore = 0;
   let fetching = false;
   let lastFetch = 0;
+  let totalPlayers = 0;           // total player count from server
+  let loadedLimit = 50;           // track which limit was last used (50 or 200)
 
   function fmt(n) {
     return (n | 0).toLocaleString();
@@ -5392,6 +5525,36 @@ window.Leaderboard = (function () {
         yoursEl.textContent = "";
       }
     }
+
+    // Update count subtitle
+    const countEl = document.getElementById("lb-count");
+    if (countEl) {
+      if (rows.length < totalPlayers) {
+        countEl.textContent = `Showing top ${rows.length} of ${totalPlayers} players`;
+        countEl.style.display = "";
+      } else {
+        countEl.style.display = "none";
+      }
+    }
+
+    // Update "Show more" button
+    const btnShowMore = document.getElementById("lb-show-more");
+    if (btnShowMore) {
+      if (rows.length < totalPlayers && rows.length < 200) {
+        btnShowMore.style.display = "";
+        btnShowMore.textContent = "Show more";
+        btnShowMore.disabled = false;
+      } else {
+        btnShowMore.style.display = "none";
+      }
+    }
+
+    // Update explorer link
+    const explorerLink = document.getElementById("lb-explorer-link");
+    if (explorerLink) {
+      explorerLink.style.display = "";
+      explorerLink.textContent = "View all draws on explorer →";
+    }
   }
 
   async function refresh() {
@@ -5401,13 +5564,14 @@ window.Leaderboard = (function () {
       if (!myAddr) {
         try { myAddr = await getMyAddressCached(); } catch (_) {}
       }
-      const q = "/__sands/leaderboard?scope=" + scope +
+      const q = "/__sands/leaderboard?scope=" + scope + "&limit=" + loadedLimit +
         (myAddr ? "&me=" + encodeURIComponent(myAddr) : "");
       const resp = await fetch(q, { cache: "no-store" });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
       rows = Array.isArray(data.top) ? data.top : [];
       youRow = data.you || null;
+      totalPlayers = data.totalPlayers || 0;
       lastFetch = Date.now();
       if (youRow) setChip(youRow.score);
       // Warm username cache so names aren't all fallbacks on first paint.
@@ -5499,6 +5663,45 @@ window.Leaderboard = (function () {
   if (tabAll) tabAll.addEventListener("click", () => setScope("all"));
   if (tabDaily) tabDaily.addEventListener("click", () => setScope("daily"));
 
+  // "Show more" button handler
+  const btnShowMore = document.getElementById("lb-show-more");
+  if (btnShowMore) {
+    btnShowMore.addEventListener("click", async () => {
+      btnShowMore.disabled = true;
+      btnShowMore.textContent = "Loading…";
+      try {
+        loadedLimit = 200;
+        await refresh();
+      } catch (e) {
+        console.error("[leaderboard] show-more failed:", e);
+        btnShowMore.disabled = false;
+        btnShowMore.textContent = "Show more";
+      }
+    });
+  }
+
+  // Explorer link setup
+  function updateExplorerLink() {
+    const explorerLink = document.getElementById("lb-explorer-link");
+    if (!explorerLink) return;
+    if (!window.usernode || !window.usernode.transactionsBaseUrl) {
+      explorerLink.style.display = "none";
+      return;
+    }
+    const baseUrl = window.usernode.transactionsBaseUrl;
+    const parts = baseUrl.split("/");
+    const chainId = parts[parts.length - 1];
+    const appPubkey = "ut1r96pdaa7h2k4vf62w3w598fyrelv9wru4t53qtgswgfzpsvz77msj588uu";
+    explorerLink.href = `https://testnet-explorer.usernodelabs.org/${chainId}/transactions?recipient=${appPubkey}`;
+  }
+
+  // Try to set up explorer link on first open
+  const origOpen = open;
+  open = function() {
+    updateExplorerLink();
+    return origOpen();
+  };
+
   // Prime the chip once the address + a first ranking are available. Runs
   // shortly after load so the WS/bridge have a chance to come up; harmless
   // if it 503s early (the next open() refreshes).
@@ -5524,7 +5727,7 @@ function captureCreation() {
     raw.set(winds, FRAME_SIZE);
     raw.set(burns, FRAME_SIZE * 2);
     const compressed = pako.deflate(raw);
-    // base64 in chunks so String.fromCharCode.apply doesn't blow the stack.
+    // base64 in chunks so String.fromCharCode.apply doesn’t blow the stack.
     let bin = "";
     const CH = 0x8000;
     for (let i = 0; i < compressed.length; i += CH) {
@@ -5547,7 +5750,7 @@ function captureCreation() {
 }
 
 // Small PNG of the rendered canvas for the gallery grid. Needs the regl
-// context's preserveDrawingBuffer:true (set at init) so the WebGL canvas
+// context’s preserveDrawingBuffer:true (set at init) so the WebGL canvas
 // reads back. Returns a data: URL, or null on failure (placeholder tile).
 function captureThumbnail() {
   try {
@@ -5594,8 +5797,8 @@ window.Gallery = (function () {
   let sharedOpened = false;
 
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    return String(s == null ? "" : s).replace(/[&<>"’]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", ‘"’: "&quot;", "’": "&#39;" }[c])
     );
   }
 
@@ -5668,7 +5871,7 @@ window.Gallery = (function () {
     const addr = await myAddr();
     if (!addr) { closeOverlays(); needWalletMsg(); return; }
     const snapshot = captureCreation();
-    if (!snapshot) { showError("Couldn't capture the canvas."); return; }
+    if (!snapshot) { showError("Couldn’t capture the canvas."); return; }
     const thumb = captureThumbnail();
     const title = (saveNameEl.value || "").trim() || defaultTitle();
 
@@ -5702,7 +5905,7 @@ window.Gallery = (function () {
     const addr = await myAddr();
     if (!addr) { needWalletMsg(); return; }
     galOverlay.classList.add("open");
-    galGrid.innerHTML = '<div class="gal-empty">Loading…</div>';
+    galGrid.innerHTML = ‘<div class="gal-empty">Loading…</div>’;
     galSub.textContent = "";
     try {
       const resp = await fetch("/__sands/creations?owner=" + encodeURIComponent(addr), { cache: "no-store" });
@@ -5710,34 +5913,34 @@ window.Gallery = (function () {
       const data = await resp.json();
       renderGrid(Array.isArray(data.items) ? data.items : []);
     } catch (e) {
-      galGrid.innerHTML = '<div class="gal-empty">Couldn’t load your gallery. Try again.</div>';
+      galGrid.innerHTML = ‘<div class="gal-empty">Couldn’t load your gallery. Try again.</div>’;
     }
   }
 
   function renderGrid(items) {
     if (!items.length) {
       galSub.textContent = "";
-      galGrid.innerHTML = '<div class="gal-empty">Nothing saved yet — tap 💾 to keep a copy of the canvas.</div>';
+      galGrid.innerHTML = ‘<div class="gal-empty">Nothing saved yet — tap 💾 to keep a copy of the canvas.</div>’;
       return;
     }
     galSub.textContent = items.length + (items.length === 1 ? " creation" : " creations");
     let html = "";
     for (const it of items) {
       const thumb = it.thumb_b64
-        ? '<img class="gal-thumb" data-id="' + esc(it.id) + '" alt="" src="' + esc(it.thumb_b64) + '">'
-        : '<div class="gal-thumb" data-id="' + esc(it.id) + '"></div>';
+        ? ‘<img class="gal-thumb" data-id="’ + esc(it.id) + ‘" alt="" src="’ + esc(it.thumb_b64) + ‘">’
+        : ‘<div class="gal-thumb" data-id="’ + esc(it.id) + ‘"></div>’;
       html +=
-        '<div class="gal-card" data-id="' + esc(it.id) + '">' +
+        ‘<div class="gal-card" data-id="’ + esc(it.id) + ‘">’ +
         thumb +
-        '<div class="gal-meta">' +
-        '<div class="gal-title">' + esc(it.title) + "</div>" +
-        '<div class="gal-date">' + esc(fmtDate(it.created_at)) + "</div>" +
+        ‘<div class="gal-meta">’ +
+        ‘<div class="gal-title">’ + esc(it.title) + "</div>" +
+        ‘<div class="gal-date">’ + esc(fmtDate(it.created_at)) + "</div>" +
         "</div>" +
-        '<div class="gal-actions">' +
-        '<button class="gal-open" data-act="open" data-id="' + esc(it.id) + '">Open</button>' +
-        '<button data-act="share" data-id="' + esc(it.id) + '">Share</button>' +
-        '<button data-act="rename" data-id="' + esc(it.id) + '" data-title="' + esc(it.title) + '">Rename</button>' +
-        '<button class="gal-del" data-act="delete" data-id="' + esc(it.id) + '">Delete</button>' +
+        ‘<div class="gal-actions">’ +
+        ‘<button class="gal-open" data-act="open" data-id="’ + esc(it.id) + ‘">Open</button>’ +
+        ‘<button data-act="share" data-id="’ + esc(it.id) + ‘">Share</button>’ +
+        ‘<button data-act="rename" data-id="’ + esc(it.id) + ‘" data-title="’ + esc(it.title) + ‘">Rename</button>’ +
+        ‘<button class="gal-del" data-act="delete" data-id="’ + esc(it.id) + ‘">Delete</button>’ +
         "</div></div>";
     }
     galGrid.innerHTML = html;
@@ -5756,19 +5959,19 @@ window.Gallery = (function () {
       if (c && c.gone) { showError("This creation is no longer available."); openGallery(); return; }
       enterViewMode(c, { ownerName: nameFor(c.owner) });
     } catch (e) {
-      showError("Couldn't open that creation.");
+      showError("Couldn’t open that creation.");
     }
   }
 
   function shareLink(id) {
     const url = location.origin + location.pathname + "?creation=" + encodeURIComponent(id);
     copyTextToClipboard(url).then((ok) => {
-      toast(ok ? "Link copied" : "Couldn't copy — link: " + url);
+      toast(ok ? "Link copied" : "Couldn’t copy — link: " + url);
     });
   }
 
   async function deleteCreation(id) {
-    if (!confirm("Delete this creation? This can't be undone.")) return;
+    if (!confirm("Delete this creation? This can’t be undone.")) return;
     const addr = await myAddr();
     if (!addr) { needWalletMsg(); return; }
     try {
@@ -5780,7 +5983,7 @@ window.Gallery = (function () {
       toast("Deleted");
       openGallery();
     } catch (e) {
-      showError("Couldn't delete that creation.");
+      showError("Couldn’t delete that creation.");
     }
   }
 
@@ -5808,22 +6011,22 @@ window.Gallery = (function () {
       renameTarget = null;
       openGallery();
     } catch (e) {
-      showError("Couldn't rename that creation.");
+      showError("Couldn’t rename that creation.");
     }
   }
 
   // ── View mode ──────────────────────────────────────────────────────
   function enterViewMode(creation, opts) {
     opts = opts || {};
-    if (!creation || !creation.snapshot) { showError("Couldn't open that creation."); return; }
+    if (!creation || !creation.snapshot) { showError("Couldn’t open that creation."); return; }
     const snap = creation.snapshot;
     if ((snap.width && snap.width !== WIDTH) || (snap.height && snap.height !== HEIGHT)) {
-      showError("That creation was made on a different canvas size and can't be shown here.");
+      showError("That creation was made on a different canvas size and can’t be shown here.");
       return;
     }
     closeOverlays();
     viewingCreation = true;
-    try { loadSnapshot(snap); } catch (e) { viewingCreation = false; showError("Couldn't load that creation."); return; }
+    try { loadSnapshot(snap); } catch (e) { viewingCreation = false; showError("Couldn’t load that creation."); return; }
     const who = opts.ownerName ? " by " + esc(opts.ownerName) : "";
     bannerText.innerHTML = "Viewing <strong>" + esc(creation.title || "a saved creation") + "</strong>" + who;
     banner.classList.add("open");
@@ -5843,7 +6046,7 @@ window.Gallery = (function () {
       pendingTxs = [];
       loadSnapshot(snap);
     } catch (e) {
-      // Couldn't refetch — avoid a fast-forward storm by jumping the tick
+      // Couldn’t refetch — avoid a fast-forward storm by jumping the tick
       // counter to wall-clock and clearing buffered txs.
       pendingTxs = [];
       try {
@@ -5865,7 +6068,7 @@ window.Gallery = (function () {
       if (c && c.gone) { showError("This shared creation is no longer available."); return; }
       enterViewMode(c, { ownerName: nameFor(c.owner) });
     } catch (e) {
-      showError("Couldn't open the shared creation.");
+      showError("Couldn’t open the shared creation.");
     }
   }
 
@@ -5899,6 +6102,236 @@ window.Gallery = (function () {
   });
 
   return { maybeOpenShared, enterViewMode, exitViewMode, captureCreation };
+})();
+
+// ── Transaction Log ─────────────────────────────────────────────────────────
+//
+// Shows a reverse-chronological list of draw transactions sent to the canvas.
+// Mirrors the leaderboard’s 50-initial + "Show more" to 200 + explorer link
+// pattern for consistent UX. Live updates prepend new transactions via the WS.
+window.TransactionLog = (function () {
+  const overlay = document.getElementById("transaction-log-overlay");
+  const content = document.getElementById("transaction-log-content");
+  const listEl = document.getElementById("tl-list");
+  const countEl = document.getElementById("tl-count");
+  const btnOpen = document.getElementById("transaction-log-btn");
+  const btnShowMore = document.getElementById("tl-show-more");
+  const explorerLink = document.getElementById("tl-explorer-link");
+
+  let transactions = [];          // all fetched transactions (reverse order)
+  let totalTxs = 0;               // total transaction count from server
+  let loadedCount = 50;           // how many rows currently shown
+  let loadedLimit = 50;           // the limit last used in fetch
+  let fetching = false;
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"’]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", ‘"’: "&quot;", "’": "&#39;" }[c])
+    );
+  }
+
+  function nameFor(pubkey) {
+    try {
+      if (window.UsernodeUsernames) return window.UsernodeUsernames.getUsernameSync(pubkey);
+    } catch (_) {}
+    return "user_" + (pubkey ? pubkey.slice(-6) : "??????");
+  }
+
+  function drawPointsFromMemo(memo) {
+    if (!memo || memo.app !== "falling-sands" || memo.type !== "draw") return null;
+    // Check for old format with .s (segments) or new format with .points
+    const points = memo.s || memo.points || [];
+    let area = 0;
+    let speciesSet = new Set();
+    for (const seg of points) {
+      if (!Array.isArray(seg) || seg.length < 6) continue;
+      const sp = seg[5] | 0;
+      if (sp === 0) continue;
+      speciesSet.add(sp);
+      const r = Math.max(1, Math.min(20, seg[4] | 0));
+      const dx = (seg[2] | 0) - (seg[0] | 0);
+      const dy = (seg[3] | 0) - (seg[1] | 0);
+      area += Math.sqrt(dx * dx + dy * dy) * r * 2 + Math.PI * r * r;
+    }
+    return {
+      pixels: Math.round(area),
+      species: speciesSet.size
+    };
+  }
+
+  function relativeTime(tsMs) {
+    const now = Date.now();
+    const agoMs = now - tsMs;
+    if (agoMs < 60000) return "just now";
+    const agoS = Math.floor(agoMs / 1000);
+    if (agoS < 3600) return Math.floor(agoS / 60) + "m ago";
+    if (agoS < 86400) return Math.floor(agoS / 3600) + "h ago";
+    return Math.floor(agoS / 86400) + "d ago";
+  }
+
+  function txRowHtml(tx) {
+    const pubkey = tx.from_pubkey || tx.source || "unknown";
+    const name = nameFor(pubkey);
+    let parsed;
+    try {
+      parsed = typeof tx.memo === "string" ? JSON.parse(tx.memo) : tx.memo;
+    } catch (_) {
+      parsed = null;
+    }
+    const drawData = parsed ? drawPointsFromMemo(parsed) : null;
+    const time = relativeTime(tx.timestamp_ms || Date.now());
+    const summary = drawData ? `${drawData.pixels} pixels, ${drawData.species} element${drawData.species !== 1 ? "s" : ""}` : "draw";
+
+    return (
+      ‘<div class="tl-row">’ +
+      ‘<span class="tl-name">’ + escapeHtml(name) + ‘</span>’ +
+      ‘<span class="tl-time">’ + escapeHtml(time) + ‘</span>’ +
+      ‘<span class="tl-summary">’ + escapeHtml(summary) + ‘</span>’ +
+      ‘</div>’
+    );
+  }
+
+  function render() {
+    if (!listEl) return;
+    if (!transactions.length) {
+      listEl.innerHTML = ‘<div class="tl-empty">No transactions yet.</div>’;
+    } else {
+      let html = "";
+      for (let i = 0; i < Math.min(loadedCount, transactions.length); i++) {
+        html += txRowHtml(transactions[i]);
+      }
+      listEl.innerHTML = html;
+    }
+
+    // Update count subtitle
+    if (countEl) {
+      if (loadedCount < totalTxs) {
+        countEl.textContent = `Showing last ${loadedCount} of ${totalTxs} transactions`;
+        countEl.style.display = "";
+      } else {
+        countEl.style.display = "none";
+      }
+    }
+
+    // Update "Show more" button
+    if (btnShowMore) {
+      if (loadedCount < totalTxs && loadedCount < 200) {
+        btnShowMore.style.display = "";
+        btnShowMore.textContent = "Show more";
+        btnShowMore.disabled = false;
+      } else {
+        btnShowMore.style.display = "none";
+      }
+    }
+
+    // Update explorer link
+    if (explorerLink) {
+      explorerLink.style.display = "";
+      explorerLink.textContent = "View all draws on explorer →";
+    }
+  }
+
+  async function fetchTransactions(limit) {
+    try {
+      const resp = await fetch("/__sands/transactions?limit=" + limit, { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      const txs = Array.isArray(data.transactions) ? data.transactions : [];
+      totalTxs = data.totalTransactions || txs.length;
+      return txs;
+    } catch (e) {
+      console.error("[transaction-log] fetch failed:", e);
+      throw e;
+    }
+  }
+
+  async function refresh() {
+    if (fetching) return;
+    fetching = true;
+    try {
+      const txs = await fetchTransactions(loadedLimit);
+      transactions = txs;
+      loadedCount = Math.min(loadedLimit, transactions.length);
+      render();
+    } catch (e) {
+      if (listEl && !transactions.length) {
+        listEl.innerHTML = ‘<div class="tl-empty">Transaction history unavailable.</div>’;
+      }
+    } finally {
+      fetching = false;
+    }
+  }
+
+  function open() {
+    overlay.classList.add("open");
+    refresh();
+  }
+
+  function close() { overlay.classList.remove("open"); }
+
+  function onTx(tx) {
+    if (!tx || !tx.memo) return;
+    if (!Array.isArray(tx.memo)) {
+      try { tx.memo = JSON.parse(tx.memo); } catch (_) { return; }
+    }
+    if (!tx.memo || tx.memo.app !== "falling-sands" || tx.memo.type !== "draw") return;
+
+    // Prepend to the front
+    transactions.unshift(tx);
+    // Keep only the currently loaded set
+    if (transactions.length > loadedLimit) {
+      transactions = transactions.slice(0, loadedLimit);
+    }
+    totalTxs++;
+
+    if (overlay.classList.contains("open")) {
+      render();
+    }
+  }
+
+  function updateExplorerLink() {
+    if (!explorerLink || !window.usernode || !window.usernode.transactionsBaseUrl) {
+      if (explorerLink) explorerLink.style.display = "none";
+      return;
+    }
+    const baseUrl = window.usernode.transactionsBaseUrl;
+    const parts = baseUrl.split("/");
+    const chainId = parts[parts.length - 1];
+    const appPubkey = "ut1r96pdaa7h2k4vf62w3w598fyrelv9wru4t53qtgswgfzpsvz77msj588uu";
+    explorerLink.href = `https://testnet-explorer.usernodelabs.org/${chainId}/transactions?recipient=${appPubkey}`;
+  }
+
+  // Wire controls
+  if (btnOpen) btnOpen.addEventListener("click", open);
+  if (overlay) {
+    overlay.addEventListener("click", (e) => { if (!content.contains(e.target)) close(); });
+  }
+  if (btnShowMore) {
+    btnShowMore.addEventListener("click", async () => {
+      btnShowMore.disabled = true;
+      btnShowMore.textContent = "Loading…";
+      try {
+        loadedLimit = 200;
+        const txs = await fetchTransactions(loadedLimit);
+        transactions = txs;
+        loadedCount = Math.min(loadedLimit, transactions.length);
+        render();
+      } catch (e) {
+        console.error("[transaction-log] show-more failed:", e);
+        btnShowMore.disabled = false;
+        btnShowMore.textContent = "Show more";
+      }
+    });
+  }
+
+  // Try to set up explorer link on first open
+  const origOpen = open;
+  open = function() {
+    updateExplorerLink();
+    return origOpen();
+  };
+
+  return { onTx, refresh, open };
 })();
 
 // ── Admin reset ─────────────────────────────────────────────────────────────
