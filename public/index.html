@@ -827,6 +827,12 @@
       color: var(--text-muted);
     }
     #clear-canvas-btn:hover { color: var(--danger-soft); }
+    #randomize-btn {
+      font-size: var(--fs-md);
+      background: var(--surface-2);
+      border-radius: 50%;
+      color: var(--text-muted);
+    }
 
     /* ── Header score chip ───────────────────────────── */
     #score-chip {
@@ -1733,6 +1739,7 @@
   <button class="quick-btn" id="save-btn" type="button" title="Save this canvas to your gallery">&#x1F4BE;</button>
   <button class="quick-btn" id="gallery-btn" type="button" title="Your saved creations">&#x1F5BC;</button>
   <button class="quick-btn" id="leaderboard-btn" type="button" title="Leaderboard">&#x1F3C6;</button>
+  <button class="quick-btn" id="randomize-btn" type="button" title="Randomize">&#x1F3B2;</button>
   <button class="quick-btn" id="clear-canvas-btn" type="button" title="Clear canvas">&#x1F5D1;</button>
   <button class="quick-btn" id="info-btn" type="button" title="Help">?</button>
   <!-- The .tb-right slot is always rendered so the toolbar layout
@@ -4970,6 +4977,48 @@ btnDiscard.addEventListener("click", () => {
   usedBudget = 0;
   overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   refreshFabs();
+});
+
+const RANDOMIZE_PALETTE = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 16, 18];
+
+function buildRandomStrokes() {
+  // Caller must clear pendingStrokes/usedBudget first; this function
+  // pushes directly into those globals so wouldExceedBudget sees the
+  // accumulating memo length correctly.
+  const TARGET = 20;
+  for (let i = 0; i < TARGET; i++) {
+    const species = RANDOMIZE_PALETTE[Math.floor(Math.random() * RANDOMIZE_PALETTE.length)];
+    const cx = 10 + Math.floor(Math.random() * (WIDTH - 20));
+    const cy = 10 + Math.floor(Math.random() * (HEIGHT - 20));
+    const size = 3 + Math.round(Math.random() * 5);
+    const angle = Math.random() * Math.PI * 2;
+    const len = Math.random() * 25;
+    const dx = Math.round(Math.cos(angle) * len / 2);
+    const dy = Math.round(Math.sin(angle) * len / 2);
+    const seg = {
+      x1: Math.max(0, Math.min(WIDTH - 1, cx - dx)),
+      y1: Math.max(0, Math.min(HEIGHT - 1, cy - dy)),
+      x2: Math.max(0, Math.min(WIDTH - 1, cx + dx)),
+      y2: Math.max(0, Math.min(HEIGHT - 1, cy + dy)),
+      size,
+      species,
+    };
+    if (wouldExceedBudget(seg)) continue;
+    seg.area = segmentArea(seg);
+    usedBudget += seg.area;
+    pendingStrokes.push(seg);
+  }
+}
+
+document.getElementById("randomize-btn").addEventListener("click", () => {
+  if (sending || viewingCreation) return;
+  pendingStrokes = [];
+  usedBudget = 0;
+  buildRandomStrokes();
+  if (!pendingStrokes.length) return;
+  redrawOverlay();
+  refreshFabs();
+  btnSend.click();
 });
 
 document.getElementById("clear-canvas-btn").addEventListener("click", () => {
