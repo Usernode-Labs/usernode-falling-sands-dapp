@@ -2084,27 +2084,34 @@
         onload="window.__sandsLoaded.usernames=true"
         onerror="window.__sandsLoaded.usernames=false;console.warn('[sands] usernode-usernames.js failed to load')"></script>
 
-<!-- regl + pako: each loaded from a primary CDN with a synchronous
-     fallback to the alternate host. The guard runs only if the primary
-     failed to define its global, so a healthy load never double-fetches
-     (this replaces the old unconditional unpkg+jsdelivr double tag). The
-     fallback is parser-blocking so `createREGL` / `pako` are defined by
-     the time the controller below runs — preserving the synchronous
-     contract the renderer relies on. If BOTH hosts fail, the controller's
-     own regl guard routes to the loading-error card with Retry. -->
-<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"
-        onerror="console.warn('[sands] regl primary (jsdelivr) failed — trying fallback')"></script>
+<!-- regl + pako: the renderer and snapshot codec are REQUIRED and
+     parser-blocking, so boot is gated on them resolving. They are now
+     served SAME-ORIGIN from this app's own /public (vendored at
+     public/regl.min.js + public/pako.min.js, regl@2.1.0 / pako@2.1.0,
+     byte-identical to the CDN builds). Same-origin is the fix for the
+     staging/iframe/headless-check failure: an outside CDN
+     (cdn.jsdelivr.net / unpkg.com) is often unreachable or blocked there,
+     and because these libs are required, a stalled/blocked CDN fetch used
+     to hard-gate the whole app. Loading them from the same origin that
+     already delivered index.html means "if you can open the page, the libs
+     load too." A single jsdelivr fallback is retained via the existing
+     document.write guard (runs only if the same-origin primary failed to
+     define its global) to recover from a missing/corrupt local file. If
+     both fail, the controller's own regl/pako guards route to the
+     loading-error card with Retry. -->
+<script src="/regl.min.js"
+        onerror="console.warn('[sands] regl same-origin failed — trying CDN fallback')"></script>
 <script>
   window.createREGL || document.write(
-    '<script src="https://unpkg.com/regl@2.1.0/dist/regl.min.js"' +
-    ' onerror="console.warn(\'[sands] regl fallback (unpkg) failed\')"><\/script>');
+    '<script src="https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.min.js"' +
+    ' onerror="console.warn(\'[sands] regl CDN fallback (jsdelivr) failed\')"><\/script>');
 </script>
-<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"
-        onerror="console.warn('[sands] pako primary (jsdelivr) failed — trying fallback')"></script>
+<script src="/pako.min.js"
+        onerror="console.warn('[sands] pako same-origin failed — trying CDN fallback')"></script>
 <script>
   window.pako || document.write(
-    '<script src="https://unpkg.com/pako@2.1.0/dist/pako.min.js"' +
-    ' onerror="console.warn(\'[sands] pako fallback (unpkg) failed\')"><\/script>');
+    '<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"' +
+    ' onerror="console.warn(\'[sands] pako CDN fallback (jsdelivr) failed\')"><\/script>');
 </script>
 
 <script src="/wasm-browser.js"
@@ -2653,6 +2660,14 @@ function deriveLoadError(phase, detail) {
           + "). You can keep waiting or play offline.";
       }
     }
+  }
+
+  // Name the specific failed library in the LIB message (e.g. "regl (WebGL
+  // renderer)" / "pako (snapshot decoder)") so the user-visible card and the
+  // SND-LOAD-LIB code identify the culprit instead of a generic "a library".
+  if (phase === "LIB" && detailLine) {
+    message = "Couldn't load a required component — " + detailLine
+      + ". Check your connection and tap Retry.";
   }
 
   // Offline play is only meaningful when there's a local snapshot to draw
@@ -3663,12 +3678,25 @@ window.addEventListener("resize", sizeCanvas);
 let cellData = new Uint8Array(WIDTH * HEIGHT * CELL_BYTES);
 
 if (typeof createREGL === "undefined") {
-  // Both CDN hosts for regl failed (primary + fallback). Surface inside the
-  // overlay with a working Retry rather than dying silently behind it.
+  // Both the same-origin primary and the CDN fallback for regl failed.
+  // Surface inside the overlay with a working Retry rather than dying
+  // silently behind it. The detail names regl so the LIB card + SND-LOAD-LIB
+  // code identify which required library is missing.
   document.getElementById("status").className = "err";
   document.getElementById("status").textContent = "Error: regl library failed to load";
   showLoaderError({ phase: "LIB", detail: "regl (WebGL renderer) unavailable" });
   throw new Error("regl not loaded");
+}
+
+if (typeof pako === "undefined") {
+  // Both the same-origin primary and the CDN fallback for pako failed. pako
+  // is required to (de)compress canvas snapshots; without it the WS snapshot
+  // decode would throw later (pako.inflate) and strand the loader. Fail fast
+  // and clearly here, mirroring the regl guard, with a pako-specific detail.
+  document.getElementById("status").className = "err";
+  document.getElementById("status").textContent = "Error: pako library failed to load";
+  showLoaderError({ phase: "LIB", detail: "pako (snapshot decoder) unavailable" });
+  throw new Error("pako not loaded");
 }
 
 let regl, dataTexture;
