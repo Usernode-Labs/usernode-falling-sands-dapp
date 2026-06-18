@@ -1,4 +1,10 @@
 {
+  "tests": [
+    {
+      "name": "Boots when the wallet bridge is unavailable",
+      "path": "/?loaderTest=bridge"
+    }
+  ],
   "secrets": [
     {
       "key": "APP_PUBKEY",
