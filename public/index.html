@@ -26,11 +26,40 @@
   (function () {
     "use strict";
     window.__sandsControllerAlive = false;
+    // Per-script load beacons. Each external <script> below records its
+    // key here: true on successful execution, false in its onerror. A key
+    // left undefined means the request neither completed nor definitively
+    // failed — i.e. it STALLED (hung TCP, captive portal, throttled CDN),
+    // which is exactly the case onerror never catches. The boot guard reads
+    // these to name what actually went wrong instead of blaming a generic
+    // "required component". (The parser-blocking required libs are
+    // feature-detected synchronously just before the controller, since a
+    // stall there pauses the parser before any onload could fire.)
+    window.__sandsLoaded = window.__sandsLoaded || {};
     var FIRED = false;
     // ~7s: long enough that any healthy boot signals alive first (even a
     // cold WASM load), short enough that a dead cross-origin fetch doesn't
     // strand the user behind a frozen bar.
     var BOOT_GUARD_MS = 7000;
+
+    // The renderer (regl), snapshot codec (pako) and WASM loader are the
+    // only genuinely-required boot dependencies — the app cannot draw a
+    // single pixel without them. The wallet bridge and the username helper
+    // are OPTIONAL: viewing and drawing work without them (only on-chain
+    // saving needs the bridge, which has its own QR fallback). Only a
+    // missing *required* piece earns the "required component" wording.
+    var REQUIRED = { regl: "the renderer", pako: "the snapshot decoder", wasm: "the game engine" };
+    var OPTIONAL = { bridge: "the wallet helper", usernames: "the username helper" };
+
+    function missingNames(map) {
+      var out = [];
+      for (var k in map) {
+        if (Object.prototype.hasOwnProperty.call(map, k) && window.__sandsLoaded[k] !== true) {
+          out.push(map[k]);
+        }
+      }
+      return out;
+    }
 
     function showBootError() {
       if (FIRED || window.__sandsControllerAlive) return;
@@ -41,10 +70,26 @@
       var status = document.getElementById("loader-status");
       var track  = ov ? ov.querySelector(".loader-track") : null;
       var retry  = document.getElementById("loader-retry-btn");
+
+      // Pick wording from the beacons. A required miss is the only case that
+      // earns "required component"; an optional-only miss says the app can
+      // continue (reloading boots straight into the canvas).
+      var missReq = missingNames(REQUIRED);
+      var missOpt = missingNames(OPTIONAL);
+      var text;
+      if (missReq.length) {
+        text = "Couldn't load a required component (" + missReq.join(", ")
+          + "). Check your connection and tap Retry.";
+      } else if (missOpt.length) {
+        text = "A helper (" + missOpt.join(", ")
+          + ") is taking too long. Tap Retry to continue — viewing works without it.";
+      } else {
+        text = "Loading didn't finish. Check your connection and tap Retry.";
+      }
+
       if (track)  track.style.display = "none";
       if (status) status.textContent = "Something went wrong";
-      if (msg)    msg.textContent =
-        "Couldn't load a required component. Check your connection and tap Retry.";
+      if (msg)    msg.textContent = text;
       if (err)    err.hidden = false;
       if (retry && !retry.__bootWired) {
         retry.__bootWired = true;
@@ -2020,10 +2065,24 @@
      Cache-Control: no-cache, must-revalidate so each page load
      revalidates via 304. Major-version bumps move to /v2/, segregating
      cache state naturally. -->
+<!-- The bridge is OPTIONAL for viewing/drawing (only on-chain saving needs
+     it, and that has its own QR fallback). It is cross-origin, so a slow or
+     blocked host used to stall the parser-blocking <script> and strand boot
+     behind the 7s guard. `defer` makes it download in parallel without
+     pausing the parser, so a stalled/absent bridge can no longer gate the
+     canvas — the controller (an inline, non-deferred script below) runs
+     regardless, and the bridge augments `window.usernode` whenever it lands.
+     onload/onerror feed the boot-guard beacons so a genuine stall is named. -->
 <script src="https://social-vibecoding.usernodelabs.org/usernode-bridge/v1/bridge.js"
-        onerror="window.__sandsBridgeFailed=true;console.warn('[sands] bridge.js failed to load — wallet/send disabled, viewing still works')"></script>
+        defer
+        onload="window.__sandsLoaded.bridge=true"
+        onerror="window.__sandsLoaded.bridge=false;window.__sandsBridgeFailed=true;console.warn('[sands] bridge.js failed to load — wallet/send disabled, viewing still works')"></script>
+<!-- Username helper is also optional (display only) — defer for the same
+     reason; the controller guards every UsernodeUsernames access. -->
 <script src="/usernode-usernames.js"
-        onerror="console.warn('[sands] usernode-usernames.js failed to load')"></script>
+        defer
+        onload="window.__sandsLoaded.usernames=true"
+        onerror="window.__sandsLoaded.usernames=false;console.warn('[sands] usernode-usernames.js failed to load')"></script>
 
 <!-- regl + pako: each loaded from a primary CDN with a synchronous
      fallback to the alternate host. The guard runs only if the primary
@@ -2050,6 +2109,19 @@
 
 <script src="/wasm-browser.js"
         onerror="console.warn('[sands] wasm-browser.js failed to load')"></script>
+
+<script>
+// Synchronous load beacons for the parser-blocking REQUIRED libs. This runs
+// only after regl/pako/wasm-browser have each had their turn (including each
+// lib's document.write CDN fallback), so feature-detection here is
+// authoritative — true when the global is defined, false otherwise. A stall
+// on any of these pauses the parser *before* this line, leaving the beacon
+// undefined, which the boot guard correctly reads as "missing" and names.
+window.__sandsLoaded = window.__sandsLoaded || {};
+window.__sandsLoaded.regl = (typeof window.createREGL !== "undefined");
+window.__sandsLoaded.pako = (typeof window.pako !== "undefined");
+window.__sandsLoaded.wasm = (typeof window.loadSandspielWasm !== "undefined");
+</script>
 
 <script>
 // Tell the <head> boot safety net the controller actually started. Set
@@ -2596,6 +2668,16 @@ function deriveLoadError(phase, detail) {
   if (detailLine) lines.push("Detail: " + detailLine);
   if (snap && snap.status) lines.push("Node: " + snap.status);
   if (typeof APP_PUBKEY === "string" && APP_PUBKEY) lines.push("App: " + APP_PUBKEY);
+  // Per-script load beacons — names which boot dependency loaded / failed /
+  // stalled, so a pasted report identifies the culprit resource directly.
+  try {
+    const ld = window.__sandsLoaded;
+    if (ld) {
+      const state = (v) => v === true ? "ok" : v === false ? "failed" : "stalled";
+      lines.push("Libs: " + ["regl", "pako", "wasm", "bridge", "usernames"]
+        .map((k) => k + "=" + state(ld[k])).join(" "));
+    }
+  } catch (_) {}
   try { lines.push("Time: " + new Date().toISOString()); } catch (_) {}
   const clipboard = lines.join("\n");
 
@@ -2951,9 +3033,11 @@ async function startLoaderWatchdog() {
 startLoaderWatchdog();
 
 // Dev-only loader-state forcing hook. `?loaderTest=replay|node|explorer|
-// wasm|lib|ws|offline` renders the corresponding terminal card so the messages,
-// copyable code, Copy button, and Play-offline branch can be exercised in
-// staging without standing up a real cold-boot replay or a desynced node.
+// wasm|lib|ws|offline|bridge` renders the corresponding terminal card (or, for
+// `bridge`, simulates a dead optional wallet helper and confirms boot still
+// completes) so the messages, copyable code, Copy button, and Play-offline
+// branch can be exercised in staging without standing up a real cold-boot
+// replay or a desynced node.
 // Strictly gated behind mock/local-dev so it can never trigger in production.
 (function _maybeRunLoaderTest() {
   let param = null;
@@ -3003,6 +3087,18 @@ startLoaderWatchdog();
         break;
       case "ws":
         showLoaderError({ phase: "WS" });
+        break;
+      case "bridge":
+        // Simulate the optional wallet helper failing/stalling. Post-fix, the
+        // bridge is deferred and non-blocking, so this must NOT produce a
+        // loading error — the app continues to the canvas (viewing/drawing
+        // work; on-chain saving falls back to QR). Mark the failure and let
+        // the normal boot dismiss the overlay on its own.
+        window.__sandsBridgeFailed = true;
+        window.__sandsLoaded = window.__sandsLoaded || {};
+        window.__sandsLoaded.bridge = false;
+        console.warn("[sands] loaderTest=bridge: simulated dead bridge — app should still reach the canvas");
+        _loaderTestForce = false;
         break;
       case "offline":
         // Engine already up, only the chain gate blocking → Play offline path.
@@ -4555,6 +4651,12 @@ function startRound() {
     markEngineProgress();
     setLoadingPhase("ENGINE", 10);
     statusEl.textContent = "Loading WASM...";
+    if (typeof window.loadSandspielWasm !== "function") {
+      // wasm-browser.js (same-origin, required) never defined its loader —
+      // route to the WASM phase explicitly rather than the generic guard,
+      // mirroring the createREGL guard for the renderer.
+      throw new Error("wasm-browser.js (game engine loader) unavailable");
+    }
     const wasm = await window.loadSandspielWasm("/sandtable_bg.wasm");
     universe = wasm.Universe.new(WIDTH, HEIGHT);
     wasmMemory = wasm.memory;
