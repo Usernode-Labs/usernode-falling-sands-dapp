@@ -5797,8 +5797,8 @@ window.Gallery = (function () {
   let sharedOpened = false;
 
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"’]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", ‘"’: "&quot;", "’": "&#39;" }[c])
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
     );
   }
 
@@ -5905,7 +5905,7 @@ window.Gallery = (function () {
     const addr = await myAddr();
     if (!addr) { needWalletMsg(); return; }
     galOverlay.classList.add("open");
-    galGrid.innerHTML = ‘<div class="gal-empty">Loading…</div>’;
+    galGrid.innerHTML = `<div class="gal-empty">Loading…</div>`;
     galSub.textContent = "";
     try {
       const resp = await fetch("/__sands/creations?owner=" + encodeURIComponent(addr), { cache: "no-store" });
@@ -5913,34 +5913,34 @@ window.Gallery = (function () {
       const data = await resp.json();
       renderGrid(Array.isArray(data.items) ? data.items : []);
     } catch (e) {
-      galGrid.innerHTML = ‘<div class="gal-empty">Couldn’t load your gallery. Try again.</div>’;
+      galGrid.innerHTML = `<div class="gal-empty">Couldn’t load your gallery. Try again.</div>`;
     }
   }
 
   function renderGrid(items) {
     if (!items.length) {
       galSub.textContent = "";
-      galGrid.innerHTML = ‘<div class="gal-empty">Nothing saved yet — tap 💾 to keep a copy of the canvas.</div>’;
+      galGrid.innerHTML = `<div class="gal-empty">Nothing saved yet — tap 💾 to keep a copy of the canvas.</div>`;
       return;
     }
     galSub.textContent = items.length + (items.length === 1 ? " creation" : " creations");
     let html = "";
     for (const it of items) {
       const thumb = it.thumb_b64
-        ? ‘<img class="gal-thumb" data-id="’ + esc(it.id) + ‘" alt="" src="’ + esc(it.thumb_b64) + ‘">’
-        : ‘<div class="gal-thumb" data-id="’ + esc(it.id) + ‘"></div>’;
+        ? `<img class="gal-thumb" data-id="` + esc(it.id) + `" alt="" src="` + esc(it.thumb_b64) + `">`
+        : `<div class="gal-thumb" data-id="` + esc(it.id) + `"></div>`;
       html +=
-        ‘<div class="gal-card" data-id="’ + esc(it.id) + ‘">’ +
+        `<div class="gal-card" data-id="` + esc(it.id) + `">` +
         thumb +
-        ‘<div class="gal-meta">’ +
-        ‘<div class="gal-title">’ + esc(it.title) + "</div>" +
-        ‘<div class="gal-date">’ + esc(fmtDate(it.created_at)) + "</div>" +
+        `<div class="gal-meta">` +
+        `<div class="gal-title">` + esc(it.title) + "</div>" +
+        `<div class="gal-date">` + esc(fmtDate(it.created_at)) + "</div>" +
         "</div>" +
-        ‘<div class="gal-actions">’ +
-        ‘<button class="gal-open" data-act="open" data-id="’ + esc(it.id) + ‘">Open</button>’ +
-        ‘<button data-act="share" data-id="’ + esc(it.id) + ‘">Share</button>’ +
-        ‘<button data-act="rename" data-id="’ + esc(it.id) + ‘" data-title="’ + esc(it.title) + ‘">Rename</button>’ +
-        ‘<button class="gal-del" data-act="delete" data-id="’ + esc(it.id) + ‘">Delete</button>’ +
+        `<div class="gal-actions">` +
+        `<button class="gal-open" data-act="open" data-id="` + esc(it.id) + `">Open</button>` +
+        `<button data-act="share" data-id="` + esc(it.id) + `">Share</button>` +
+        `<button data-act="rename" data-id="` + esc(it.id) + `" data-title="` + esc(it.title) + `">Rename</button>` +
+        `<button class="gal-del" data-act="delete" data-id="` + esc(it.id) + `">Delete</button>` +
         "</div></div>";
     }
     galGrid.innerHTML = html;
@@ -6125,8 +6125,8 @@ window.TransactionLog = (function () {
   let fetching = false;
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"’]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", ‘"’: "&quot;", "’": "&#39;" }[c])
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
     );
   }
 
@@ -6183,18 +6183,18 @@ window.TransactionLog = (function () {
     const summary = drawData ? `${drawData.pixels} pixels, ${drawData.species} element${drawData.species !== 1 ? "s" : ""}` : "draw";
 
     return (
-      ‘<div class="tl-row">’ +
-      ‘<span class="tl-name">’ + escapeHtml(name) + ‘</span>’ +
-      ‘<span class="tl-time">’ + escapeHtml(time) + ‘</span>’ +
-      ‘<span class="tl-summary">’ + escapeHtml(summary) + ‘</span>’ +
-      ‘</div>’
+      `<div class="tl-row">` +
+      `<span class="tl-name">` + escapeHtml(name) + `</span>` +
+      `<span class="tl-time">` + escapeHtml(time) + `</span>` +
+      `<span class="tl-summary">` + escapeHtml(summary) + `</span>` +
+      `</div>`
     );
   }
 
   function render() {
     if (!listEl) return;
     if (!transactions.length) {
-      listEl.innerHTML = ‘<div class="tl-empty">No transactions yet.</div>’;
+      listEl.innerHTML = `<div class="tl-empty">No transactions yet.</div>`;
     } else {
       let html = "";
       for (let i = 0; i < Math.min(loadedCount, transactions.length); i++) {
@@ -6255,7 +6255,7 @@ window.TransactionLog = (function () {
       render();
     } catch (e) {
       if (listEl && !transactions.length) {
-        listEl.innerHTML = ‘<div class="tl-empty">Transaction history unavailable.</div>’;
+        listEl.innerHTML = `<div class="tl-empty">Transaction history unavailable.</div>`;
       }
     } finally {
       fetching = false;
