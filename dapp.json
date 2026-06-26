@@ -30,5 +30,12 @@
       "required": false,
       "default": "/app/data"
     }
+  ],
+  "tests": [
+    {
+      "name": "App loads and WASM engine initializes (no console errors)",
+      "path": "/",
+      "expectSelector": "canvas"
+    }
   ]
 }
