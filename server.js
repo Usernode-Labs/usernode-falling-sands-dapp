@@ -94,6 +94,11 @@ app.set("trust proxy", 1);
 // SV's waitForHealthy probe hits /health.
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+// Browsers request /favicon.ico on every page load. Answer it here — ahead
+// of every other route — so it never falls through to the app.get("*")
+// HTML shell (which the browser can't decode as an icon).
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
+
 // ── Mock API (only --local-dev) ──────────────────────────────────────────────
 const mockApi = createMockApi({ localDev: LOCAL_DEV });
 app.use((req, res, next) => {
