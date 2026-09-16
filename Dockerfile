@@ -38,9 +38,13 @@ COPY lib/ lib/
 COPY public/ public/
 COPY tests/ tests/
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chown -R 1000:1000 /app/data
 
 ENV PORT=3000 SNAPSHOT_DIR=/app/data
+# Run as the base image's non-root `node` user, named by NUMBER (UID 1000):
+# the platform runs containers with runAsNonRoot, which refuses an image that
+# would run as root and can only verify a numeric UID.
+USER 1000
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
