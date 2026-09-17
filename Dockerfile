@@ -7,7 +7,13 @@
 # deploy rebuilds the WASM from it.
 FROM rust:1.83-slim AS wasm-builder
 
-RUN apt-get update \
+# Fetch apt packages over HTTPS. The platform's build sandbox only allows
+# outbound DNS and TCP/443, and Debian's default mirror entries are plain
+# http:// on port 80, so `apt-get update` times out there and the whole
+# build fails before the crate is even compiled. deb.debian.org serves the
+# same archive over TLS and the base image already ships ca-certificates.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
  && apt-get install -y curl pkg-config libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
