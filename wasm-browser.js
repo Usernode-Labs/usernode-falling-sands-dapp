@@ -163,29 +163,85 @@ async function loadWasm(wasmUrl, opts) {
     if (controller) controller.abort();
   }, timeoutMs);
 
-  function rethrow(err) {
-    if (timedOut) {
-      throw new Error("WASM load timed out after " + Math.round(timeoutMs / 1000) + "s");
+  // Sniff the leading bytes of a buffer as text so a hard failure can report
+  // *what* arrived instead of a wasm module — e.g. an HTML login/redirect page
+  // (auth/proxy interception) or a plain-text error, vs. a genuine wasm binary
+  // (magic word "\0asm" → bytes 00 61 73 6d). Kept short and best-effort.
+  function sniffBytes(buf) {
+    try {
+      const view = new Uint8Array(buf).subarray(0, 64);
+      let s = "";
+      for (let i = 0; i < view.length; i++) {
+        const b = view[i];
+        s += (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : ".";
+      }
+      return s;
+    } catch (_) {
+      return "";
     }
-    throw err;
+  }
+
+  // Buffered instantiation: read the whole body, then compile. Works
+  // regardless of Content-Type (unlike instantiateStreaming, which rejects
+  // anything not labelled application/wasm) and gives us the bytes to sniff
+  // for a precise error. `respForBuffer` must be an unconsumed Response.
+  async function instantiateBuffered(respForBuffer) {
+    const bytes = await respForBuffer.arrayBuffer();
+    // A valid wasm binary starts with the magic word 00 61 73 6d. If it
+    // doesn't, instantiate() would throw an opaque CompileError — surface the
+    // real cause (status/type/first bytes) instead.
+    const head = new Uint8Array(bytes);
+    const looksLikeWasm =
+      head.length >= 4 && head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
+    if (!looksLikeWasm) {
+      throw new Error(
+        "WASM response was not a WebAssembly module (got " + bytes.byteLength +
+        " bytes starting \"" + sniffBytes(bytes) + "\")"
+      );
+    }
+    const result = await WebAssembly.instantiate(bytes, imports);
+    return result.instance;
   }
 
   let instance;
   try {
     const fetchOpts = controller ? { signal: controller.signal } : undefined;
     const resp = await fetch(wasmUrl, fetchOpts);
-    if (!resp.ok) throw new Error(`Failed to fetch WASM: ${resp.status}`);
+    if (!resp.ok) {
+      const ct = (resp.headers && resp.headers.get) ? (resp.headers.get("content-type") || "?") : "?";
+      throw new Error("Failed to fetch WASM: HTTP " + resp.status + " (content-type: " + ct + ")");
+    }
 
-    if (typeof WebAssembly.instantiateStreaming === "function") {
-      const result = await WebAssembly.instantiateStreaming(resp, imports);
-      instance = result.instance;
+    const contentType = (resp.headers && resp.headers.get) ? (resp.headers.get("content-type") || "") : "";
+    const isWasmType = /(^|[ ;])application\/wasm($|[ ;])/i.test(contentType);
+    const canStream = typeof WebAssembly.instantiateStreaming === "function";
+
+    if (canStream && isWasmType) {
+      // Fast path. Clone first so a streaming rejection (locked/decoded body,
+      // truncated stream behind a buffering proxy) can still fall back to a
+      // buffered read of the untouched clone instead of failing outright.
+      const clone = (typeof resp.clone === "function") ? resp.clone() : null;
+      try {
+        const result = await WebAssembly.instantiateStreaming(resp, imports);
+        instance = result.instance;
+      } catch (streamErr) {
+        if (!clone) throw streamErr;
+        instance = await instantiateBuffered(clone);
+      }
     } else {
-      const bytes = await resp.arrayBuffer();
-      const result = await WebAssembly.instantiate(bytes, imports);
-      instance = result.instance;
+      // Either streaming is unavailable, or the response isn't labelled
+      // application/wasm (the common staging-ingress case) — skip the
+      // guaranteed-to-throw streaming attempt and go straight to buffered.
+      instance = await instantiateBuffered(resp);
     }
   } catch (err) {
-    rethrow(err);
+    // Guarantee a non-empty, specific message so the loader-error card always
+    // renders a "Detail:" line a reporter can copy.
+    if (timedOut) {
+      throw new Error("WASM load timed out after " + Math.round(timeoutMs / 1000) + "s");
+    }
+    const msg = (err && err.message) ? err.message : String(err || "unknown error");
+    throw new Error(msg || "WASM load failed (no error message)");
   } finally {
     clearTimeout(timer);
   }
