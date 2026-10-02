@@ -5,6 +5,7 @@
       "path": "/?loaderTest=bridge"
     }
   ],
+  "icon": { "image": "brand/icon.png" },
   "secrets": [
     {
       "key": "APP_PUBKEY",
