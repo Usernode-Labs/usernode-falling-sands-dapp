@@ -1,4 +1,11 @@
 {
+  "tests": [
+    {
+      "name": "Boots when the wallet bridge is unavailable",
+      "path": "/?loaderTest=bridge"
+    }
+  ],
+  "icon": { "image": "brand/icon.png" },
   "secrets": [
     {
       "key": "APP_PUBKEY",

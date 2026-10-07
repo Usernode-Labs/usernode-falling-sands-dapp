@@ -770,6 +770,9 @@ function createEngine(opts) {
   }
 
   function handleTransactionsRequest(req, res) {
+    const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 500));
+    const txs = transactionsSinceSnapshot;
+    const sliced = limit < txs.length ? txs.slice(-limit) : txs;
     res.writeHead(200, {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
@@ -778,7 +781,8 @@ function createEngine(opts) {
       epoch: TICK_EPOCH,
       tickHz: TICK_HZ,
       currentTick: tickCount,
-      transactions: transactionsSinceSnapshot,
+      totalTransactions: txs.length,
+      transactions: sliced,
     }));
   }
 
