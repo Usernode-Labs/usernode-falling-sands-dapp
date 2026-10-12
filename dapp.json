@@ -3,6 +3,11 @@
     {
       "name": "Boots when the wallet bridge is unavailable",
       "path": "/?loaderTest=bridge"
+    },
+    {
+      "name": "App loads and WASM engine initializes (no console errors)",
+      "path": "/",
+      "expectSelector": "canvas"
     }
   ],
   "icon": { "image": "brand/icon.png" },
