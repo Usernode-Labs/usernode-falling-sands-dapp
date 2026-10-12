@@ -26,6 +26,11 @@
   (function () {
     "use strict";
     window.__sandsControllerAlive = false;
+    // Mock mode exists only under `node server.js --local-dev`, on this
+    // machine. Anywhere else the bridge's /__mock/enabled probe can only
+    // answer 404, which the browser logs as a console error on every load
+    // (and a check that loads the page counts it), so it is not asked.
+    window.__sandsMayMock = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
     // Per-script load beacons. Each external <script> below records its
     // key here: true on successful execution, false in its onerror. A key
     // left undefined means the request neither completed nor definitively
@@ -110,7 +115,7 @@
       // dismisses on its own). If the bridge isn't even present, this is a
       // genuine stall → surface recovery (fail safe toward the UI).
       try {
-        if (window.usernode && typeof window.usernode.isMockEnabled === "function") {
+        if (window.__sandsMayMock && window.usernode && typeof window.usernode.isMockEnabled === "function") {
           Promise.resolve(window.usernode.isMockEnabled())
             .then(function (mock) { if (!mock) showBootError(); })
             .catch(function () { showBootError(); });
@@ -2140,6 +2145,13 @@ window.__sandsLoaded.wasm = (typeof window.loadSandspielWasm !== "undefined");
 // in-app loader watchdog (stall detector + hard deadline) owns recovery.
 window.__sandsControllerAlive = true;
 
+// Declared before anything below can run: window.onerror and fitToolbar()
+// (called mid-script) read these, and a let/const read before its line runs
+// throws "Cannot access ... before initialization" — even under typeof.
+let errorStickyUntil = 0;
+const ERROR_HOLD_MS = 8000;
+const DEBUG_MODE = new URLSearchParams(window.location.search).has("debug");
+
 // =============================================================================
 // ERROR DISPLAY
 // =============================================================================
@@ -2484,7 +2496,10 @@ function loadSocialStrip(attempt) {
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       return resp.json();
     })
-    .then((data) => { renderSocialStrip(data); })
+    .then((data) => {
+      if (data && data.loading) throw new Error("loading"); // still booting: retry below
+      renderSocialStrip(data);
+    })
     .catch(() => {
       // Endpoint not ready yet (503 during cold-boot ingest) or transient —
       // retry up to twice, then give up without ever showing an error.
@@ -2847,7 +2862,7 @@ function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 // strategies (overlay-style for other dapps, in-place for sands) make
 // the same trust-after-first-sync decision.
 async function pollChainReady() {
-  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+  const mockEnabled = window.__sandsMayMock && window.usernode && typeof window.usernode.isMockEnabled === "function"
     ? await window.usernode.isMockEnabled()
     : false;
   if (mockEnabled) {
@@ -3006,7 +3021,7 @@ loadSocialStrip();
 // async path hung. Skipped entirely in mock/local-dev so the watchdog and
 // degraded banner never appear there.
 async function startLoaderWatchdog() {
-  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+  const mockEnabled = window.__sandsMayMock && window.usernode && typeof window.usernode.isMockEnabled === "function"
     ? await window.usernode.isMockEnabled()
     : false;
   if (mockEnabled) return;
@@ -3064,7 +3079,7 @@ startLoaderWatchdog();
   // before we confirm mock mode and render the forced card below.
   _loaderTestForce = true;
   (async () => {
-  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+  const mockEnabled = window.__sandsMayMock && window.usernode && typeof window.usernode.isMockEnabled === "function"
     ? await window.usernode.isMockEnabled()
     : false;
   // Also enabled on the staging preview (production mode, not mock) so the
@@ -3172,7 +3187,7 @@ let adminPubkey = null;
 
 const EXPLORER_BASE = window.location.origin + "/explorer-api";
 (async function setupExplorer() {
-  const mockEnabled = window.usernode && typeof window.usernode.isMockEnabled === "function"
+  const mockEnabled = window.__sandsMayMock && window.usernode && typeof window.usernode.isMockEnabled === "function"
     ? await window.usernode.isMockEnabled()
     : false;
   if (mockEnabled) return;
@@ -3924,9 +3939,6 @@ renderFrame();
 const statusEl = document.getElementById("status");
 const fpsEl = document.getElementById("fps-display");
 
-let errorStickyUntil = 0;
-const ERROR_HOLD_MS = 8000;
-
 function showError(msg) {
   statusEl.className = "err";
   statusEl.textContent = msg;
@@ -4208,7 +4220,6 @@ function simTick30Hz() {
 
 // ── Debug hash display (?debug query param) ────────────────────────────────
 
-const DEBUG_MODE = new URLSearchParams(window.location.search).has("debug");
 const debugHashEl = document.getElementById("debug-hash");
 if (DEBUG_MODE && debugHashEl) debugHashEl.classList.add("visible");
 if (DEBUG_MODE) {
@@ -5701,6 +5712,7 @@ window.Leaderboard = (function () {
       const resp = await fetch(q, { cache: "no-store" });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
+      if (data && data.loading) throw new Error("loading"); // the server is still booting
       rows = Array.isArray(data.top) ? data.top : [];
       youRow = data.you || null;
       totalPlayers = data.totalPlayers || 0;

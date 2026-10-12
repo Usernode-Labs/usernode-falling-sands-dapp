@@ -3,6 +3,11 @@
     {
       "name": "Boots when the wallet bridge is unavailable",
       "path": "/?loaderTest=bridge"
+    },
+    {
+      "name": "App loads and WASM engine initializes (no console errors)",
+      "path": "/",
+      "expectSelector": "canvas"
     }
   ],
   "icon": { "image": "brand/icon.png" },
@@ -36,13 +41,6 @@
       "description": "On-disk snapshot directory the engine reads/writes. The snapshot-store hydrates it from Postgres on boot and mirrors writes back. Defaults to /app/data inside the container.",
       "required": false,
       "default": "/app/data"
-    }
-  ],
-  "tests": [
-    {
-      "name": "App loads and WASM engine initializes (no console errors)",
-      "path": "/",
-      "expectSelector": "canvas"
     }
   ]
 }

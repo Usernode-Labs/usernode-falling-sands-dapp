@@ -350,7 +350,12 @@ app.use((req, res, next) => {
 // passes its wallet address so it can highlight/pin "You".
 app.get("/__sands/leaderboard", (req, res) => {
   if (!leaderboard) {
-    return res.status(503).json({ error: "Leaderboard loading..." });
+    // Still ingesting history at boot. A 200 marked `loading`, not a 503:
+    // the page asks for this on every load, and a 503 is a console error
+    // in every browser that opens the app in its first minute. The page
+    // treats `loading` as not ready yet, exactly as it treated the 503.
+    res.set("Cache-Control", "no-store");
+    return res.json({ loading: true, scope: req.query.scope === "daily" ? "daily" : "all", updatedAt: null, totalPlayers: 0, top: [], you: null });
   }
   const scope = req.query.scope === "daily" ? "daily" : "all";
   const me = typeof req.query.me === "string" ? req.query.me : null;
