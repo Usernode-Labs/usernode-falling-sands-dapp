@@ -26,11 +26,12 @@
   (function () {
     "use strict";
     window.__sandsControllerAlive = false;
-    // Mock mode exists only under `node server.js --local-dev`, on this
-    // machine. Anywhere else the bridge's /__mock/enabled probe can only
-    // answer 404, which the browser logs as a console error on every load
-    // (and a check that loads the page counts it), so it is not asked.
-    window.__sandsMayMock = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+    // Mock mode exists only under `node server.js --local-dev`, reached at
+    // localhost or a private LAN address (it prints those for a phone).
+    // Anywhere else the bridge's /__mock/enabled probe can only answer 404,
+    // which the browser logs as a console error on every load (and a check
+    // that loads the page counts it), so it is not asked.
+    window.__sandsMayMock = /^(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/.test(location.hostname);
     // Per-script load beacons. Each external <script> below records its
     // key here: true on successful execution, false in its onerror. A key
     // left undefined means the request neither completed nor definitively
