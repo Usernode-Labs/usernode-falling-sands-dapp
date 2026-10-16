@@ -2229,7 +2229,13 @@ function deriveAuthError(err, scopeHint) {
   else if (status === 403 || /forbidden|not allowed|permission/.test(lower)) reason = "FORBID";
   else if (status === 404 || /\bnot found\b/.test(lower)) reason = "NOTFND";
   else if ((status != null && status >= 500) || /server error|internal error|bad gateway|service unavailable|gateway timeout/.test(lower)) reason = "SERVER";
-  else if (/no wallet|not linked|no address|no node address|no channel|not connected|no bridge|bridge unavailable|usernode not|no usernode|getnodeaddress/.test(lower)) reason = "NOWALLET";
+  else if (/no wallet|not linked|no address|no node address|no channel|not connected|no bridge|bridge unavailable|usernode not|no usernode|getnodeaddress/.test(lower)
+    // Missing wallet helper: the deferred bridge script never loaded (or is
+    // still loading), so calling its globals throws ReferenceError/TypeError.
+    // Match only when the wording names the wallet's own functions so
+    // unrelated "is not a function" bugs keep their UNKNOWN code.
+    || /(sendtransaction|getnodeaddress|usernode)\b.*(\bis not defined\b|\bis not a function\b)/.test(lower)
+    || /cannot read propert[^ ]* of (undefined|null).*(sendtransaction|usernode)/.test(lower)) reason = "NOWALLET";
   else if (/network|failed to fetch|load failed|\bfetch\b|offline|connection|networkerror|err_/.test(lower)) reason = "NETWORK";
   else if (status != null) reason = "HTTP";
   else reason = "UNKNOWN";
@@ -2239,7 +2245,13 @@ function deriveAuthError(err, scopeHint) {
   const numericReasons = { AUTH: 1, FORBID: 1, NOTFND: 1, SERVER: 1, HTTP: 1 };
   const seg = (status != null && numericReasons[reason]) ? String(status) : reason;
   const code = "SND-" + scope.seg + "-" + seg;
-  const message = AUTH_ERR_REASONS[reason] || AUTH_ERR_REASONS.UNKNOWN;
+  let message = AUTH_ERR_REASONS[reason] || AUTH_ERR_REASONS.UNKNOWN;
+  // Unrecognised failures append the raw error detail to the message so a
+  // screenshot of the card carries the cause (the clipboard already has it).
+  // #ae-msg is filled via textContent, so the raw text can't inject HTML.
+  if (reason === "UNKNOWN" && raw) {
+    message += " Details: " + raw.slice(0, 160);
+  }
 
   // What the Copy button puts on the clipboard — the code plus the context a
   // human triaging the report would want, on stable labelled lines.
@@ -5228,6 +5240,13 @@ btnSend.addEventListener("click", async () => {
 
   try {
     setSending(true);
+    // The wallet helper is a deferred, optional script: if it failed to load
+    // (or hasn't landed yet) `sendTransaction` is undefined and the call below
+    // would throw a bare ReferenceError that classifies as UNKNOWN. Fail fast
+    // with wording the error classifier maps to the actionable NOWALLET code.
+    if (window.__sandsBridgeFailed || window.__sandsLoaded?.bridge === false || typeof sendTransaction !== "function") {
+      throw new Error("No Usernode wallet bridge: sendTransaction unavailable");
+    }
     await sendTransaction(APP_PUBKEY, 1, memo, {
       ...TX_SEND_OPTS,
       waitForInclusion: false,
